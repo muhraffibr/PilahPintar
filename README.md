@@ -27,7 +27,7 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 
 ## Pasang di HP (APK siap pakai)
 
-[`apk/PilahPintar-1.0.0-firebase-arm64.apk`](apk/PilahPintar-1.0.0-firebase-arm64.apk)
+[`apk/PilahPintar-firebase-arm64.apk`](apk/PilahPintar-firebase-arm64.apk)
 sudah terhubung ke proyek Firebase `espdatabase-94f5b`. APK ini untuk HP
 Android 7.0 ke atas (64-bit).
 
@@ -38,7 +38,9 @@ Android 7.0 ke atas (64-bit).
   perangkat.".
 
 Untuk membuat ulang APK setelah kode diubah, jalankan
-`.\tools\build_apk.ps1 -Firebase`, lalu salin hasilnya ke folder `apk/`.
+`.\tools\build_apk.ps1 -Firebase`. Skrip ini otomatis menimpa file di folder
+`apk/`, jadi tinggal commit dan push. Versi APK terlihat di aplikasi
+(**Pengaturan → Versi aplikasi**).
 
 ## Menjalankan aplikasi (mode simulasi)
 
