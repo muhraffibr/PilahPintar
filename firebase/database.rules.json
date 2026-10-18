@@ -1,0 +1,68 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": false,
+
+    "system_status": {
+      ".write": "auth != null",
+      ".validate": "newData.hasChildren(['system_status', 'conveyor_status', 'connection_status', 'last_updated'])",
+      "system_status": { ".validate": "newData.val() === 'ON' || newData.val() === 'OFF'" },
+      "conveyor_status": { ".validate": "newData.val() === 'RUNNING' || newData.val() === 'STOPPED'" },
+      "connection_status": { ".validate": "newData.val() === 'CONNECTED' || newData.val() === 'DISCONNECTED'" },
+      "last_updated": { ".validate": "newData.isNumber()" },
+      "error": { ".validate": "newData.isString() && newData.val().length <= 200" },
+      "$other": { ".validate": false }
+    },
+
+    "bins": {
+      ".write": "auth != null",
+      "$category": {
+        ".validate": "($category === 'organik' || $category === 'recyclable' || $category === 'logam' || $category === 'anorganik') && newData.hasChildren(['category', 'capacity_percentage', 'last_updated'])",
+        "capacity_percentage": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" }
+      }
+    },
+
+    "sortings": {
+      ".write": "auth != null",
+      ".indexOn": ["timestamp"],
+      "$id": {
+        ".validate": "newData.hasChildren(['category', 'timestamp', 'status'])",
+        "timestamp": { ".validate": "newData.isNumber()" },
+        "status": { ".validate": "newData.val() === 'SUCCESS' || newData.val() === 'FAILED'" }
+      }
+    },
+
+    "commands": {
+      "latest": {
+        ".write": true,
+        ".validate": "newData.hasChildren(['command', 'issued_at', 'status'])",
+        "command": { ".validate": "newData.val() === 'START' || newData.val() === 'STOP'" },
+        "issued_at": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+        "status": { ".validate": "newData.val() === 'PENDING' || newData.val() === 'ACK' || newData.val() === 'DONE' || newData.val() === 'FAILED'" },
+        "source": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "notifications": {
+      ".indexOn": ["timestamp"],
+      "$id": {
+        ".write": true,
+        ".validate": "newData.hasChildren(['type', 'message', 'timestamp', 'is_read'])",
+        "type": { ".validate": "newData.val() === 'ALMOST_FULL' || newData.val() === 'FULL' || newData.val() === 'CONNECTION_LOST' || newData.val() === 'ABNORMAL_STOP' || newData.val() === 'INFO'" },
+        "message": { ".validate": "newData.isString() && newData.val().length <= 200" },
+        "timestamp": { ".validate": "newData.isNumber()" },
+        "is_read": { ".validate": "newData.isBoolean()" }
+      }
+    },
+
+    "settings": {
+      ".write": true,
+      ".validate": "newData.hasChildren(['notification_enabled', 'almost_full_threshold', 'full_threshold']) && newData.child('almost_full_threshold').val() + 5 <= newData.child('full_threshold').val()",
+      "notification_enabled": { ".validate": "newData.isBoolean()" },
+      "almost_full_threshold": { ".validate": "newData.isNumber() && newData.val() >= 50 && newData.val() <= 95" },
+      "full_threshold": { ".validate": "newData.isNumber() && newData.val() >= 55 && newData.val() <= 100" },
+      "$other": { ".validate": false }
+    }
+  }
+}
