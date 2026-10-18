@@ -56,3 +56,6 @@ firmware/esp32/PilahPintar_ESP32/secrets.h
 
 # Konfigurasi lokal Claude Code
 .claude/
+
+# APK rilis yang sengaja dibagikan lewat repo
+!apk/*.apk

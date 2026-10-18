@@ -25,6 +25,21 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 | §14 Empty state | "Belum ada data pemilahan.", "Tidak ada notifikasi baru.", "Menunggu koneksi ke perangkat." |
 | §15 Prototype data | Mode simulasi (default) dengan data 30 hari yang realistis dan data live yang terus berubah |
 
+## Pasang di HP (APK siap pakai)
+
+[`apk/PilahPintar-1.0.0-firebase-arm64.apk`](apk/PilahPintar-1.0.0-firebase-arm64.apk)
+sudah terhubung ke proyek Firebase `espdatabase-94f5b`. APK ini untuk HP
+Android 7.0 ke atas (64-bit).
+
+- Unduh file APK ke HP, buka, lalu izinkan **Instal aplikasi tidak dikenal**.
+- Jika Play Protect memperingatkan, pilih **Detail lainnya → Tetap instal**.
+  Peringatan ini muncul karena APK ditandatangani dengan kunci pengembangan.
+- Sebelum ESP32 menyala, Dashboard menampilkan "Menunggu koneksi ke
+  perangkat.".
+
+Untuk membuat ulang APK setelah kode diubah, jalankan
+`.\tools\build_apk.ps1 -Firebase`, lalu salin hasilnya ke folder `apk/`.
+
 ## Menjalankan aplikasi (mode simulasi)
 
 Prasyarat: Flutter SDK 3.38 atau lebih baru (diuji dengan Flutter 3.47.6).
