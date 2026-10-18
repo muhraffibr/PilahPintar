@@ -27,9 +27,13 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 
 ## Pasang di HP (APK siap pakai)
 
-[`apk/PilahPintar-firebase-arm64.apk`](apk/PilahPintar-firebase-arm64.apk)
-sudah terhubung ke proyek Firebase `espdatabase-94f5b`. APK ini untuk HP
-Android 7.0 ke atas (64-bit).
+Kedua APK di bawah ini sudah terhubung ke proyek Firebase `espdatabase-94f5b`
+dan butuh Android 7.0 ke atas:
+
+| File | Ukuran | Untuk |
+|---|---|---|
+| [`apk/PilahPintar-firebase-arm64.apk`](apk/PilahPintar-firebase-arm64.apk) | ±19 MB | Hampir semua HP Android (prosesor 64-bit). Coba ini dulu. |
+| [`apk/PilahPintar-firebase-universal.apk`](apk/PilahPintar-firebase-universal.apk) | ±53 MB | Semua HP, termasuk HP lama/Android Go 32-bit. Pakai jika versi arm64 gagal dipasang ("Aplikasi tidak terpasang"). |
 
 - Unduh file APK ke HP, buka, lalu izinkan **Instal aplikasi tidak dikenal**.
 - Jika Play Protect memperingatkan, pilih **Detail lainnya → Tetap instal**.
@@ -38,9 +42,10 @@ Android 7.0 ke atas (64-bit).
   perangkat.".
 
 Untuk membuat ulang APK setelah kode diubah, jalankan
-`.\tools\build_apk.ps1 -Firebase`. Skrip ini otomatis menimpa file di folder
-`apk/`, jadi tinggal commit dan push. Versi APK terlihat di aplikasi
-(**Pengaturan → Versi aplikasi**).
+`.\tools\build_apk.ps1 -Firebase` (arm64) dan
+`.\tools\build_apk.ps1 -Firebase -Universal` (universal). Skrip ini otomatis
+menimpa file di folder `apk/`, jadi tinggal commit dan push. Versi APK terlihat
+di aplikasi (**Pengaturan → Versi aplikasi**).
 
 ## Menjalankan aplikasi (mode simulasi)
 
