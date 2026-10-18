@@ -5,6 +5,12 @@
     .\tools\build_apk.ps1                 # mode simulasi, APK arm64 (±19 MB)
     .\tools\build_apk.ps1 -Firebase       # mode Firebase (butuh firebase_config.json)
     .\tools\build_apk.ps1 -Universal      # APK semua arsitektur (±53 MB)
+
+  Hasil build:
+    - Selalu disalin ke root proyek: PilahPintar-<versi>-<mode>-<abi>.apk
+      (diabaikan git).
+    - Build -Firebase juga disalin ke apk\PilahPintar-firebase-<abi>.apk.
+      File ini ikut ter-commit; namanya tetap agar link di GitHub tidak putus.
 #>
 param(
   [switch]$Firebase,
@@ -55,9 +61,23 @@ try {
   $version = (Select-String -Path 'pubspec.yaml' -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
   $source = if ($Universal) { 'app-release.apk' } else { 'app-arm64-v8a-release.apk' }
   $abi = if ($Universal) { 'universal' } else { 'arm64' }
+  $built = Join-Path $Root "build\app\outputs\flutter-apk\$source"
   $target = Join-Path $Root "PilahPintar-$version-$suffix-$abi.apk"
-  Copy-Item (Join-Path $Root "build\app\outputs\flutter-apk\$source") $target -Force
+  Copy-Item $built $target -Force
   Write-Host "APK siap: $target"
+
+  if ($Firebase) {
+    $apkDir = Join-Path $Root 'apk'
+    New-Item -ItemType Directory -Force $apkDir | Out-Null
+    $shared = Join-Path $apkDir "PilahPintar-firebase-$abi.apk"
+    Copy-Item $built $shared -Force
+    $sizeMb = [math]::Round((Get-Item $shared).Length / 1MB, 1)
+    Write-Host "Disalin ke: $shared (versi $version, $sizeMb MB)"
+    Write-Host 'Unggah ke GitHub dengan:'
+    Write-Host '  git add apk'
+    Write-Host "  git commit -m `"Perbarui APK $version`""
+    Write-Host '  git push'
+  }
 } finally {
   Pop-Location
 }
