@@ -1,0 +1,69 @@
+{
+  "system_status": {
+    "system_status": "ON",
+    "conveyor_status": "RUNNING",
+    "connection_status": "CONNECTED",
+    "last_updated": 1759556601000,
+    "error": ""
+  },
+  "bins": {
+    "organik": {
+      "id": "bin_organik",
+      "category": "organik",
+      "capacity_percentage": 65,
+      "status": "NORMAL",
+      "last_updated": 1759556601000
+    },
+    "recyclable": {
+      "id": "bin_recyclable",
+      "category": "recyclable",
+      "capacity_percentage": 42,
+      "status": "NORMAL",
+      "last_updated": 1759556601000
+    },
+    "logam": {
+      "id": "bin_logam",
+      "category": "logam",
+      "capacity_percentage": 78,
+      "status": "ALMOST_FULL",
+      "last_updated": 1759556601000
+    },
+    "anorganik": {
+      "id": "bin_anorganik",
+      "category": "anorganik",
+      "capacity_percentage": 91,
+      "status": "FULL",
+      "last_updated": 1759556601000
+    }
+  },
+  "sortings": {
+    "-seed0001": { "category": "recyclable", "item": "Botol plastik", "timestamp": 1759556580000, "status": "SUCCESS" },
+    "-seed0002": { "category": "organik", "item": "Sisa makanan", "timestamp": 1759556460000, "status": "SUCCESS" },
+    "-seed0003": { "category": "logam", "item": "Kaleng minuman", "timestamp": 1759556280000, "status": "SUCCESS" },
+    "-seed0004": { "category": "anorganik", "item": "Kantong kresek", "timestamp": 1759556100000, "status": "SUCCESS" },
+    "-seed0005": { "category": "recyclable", "item": "Kertas", "timestamp": 1759555980000, "status": "FAILED" }
+  },
+  "commands": {
+    "latest": {
+      "command": "START",
+      "issued_at": 1759550400000,
+      "status": "DONE",
+      "source": "mobile_app"
+    }
+  },
+  "notifications": {
+    "seed_full_anorganik": {
+      "id": "seed_full_anorganik",
+      "type": "FULL",
+      "message": "Tempat sampah Anorganik penuh — kapasitas 91%.",
+      "timestamp": 1759556340000,
+      "is_read": false,
+      "category": "anorganik"
+    }
+  },
+  "settings": {
+    "notification_enabled": true,
+    "almost_full_threshold": 70,
+    "full_threshold": 90
+  }
+}
