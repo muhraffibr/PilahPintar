@@ -1,7 +1,7 @@
 name: trash_monitor
 description: >-
   Aplikasi mobile untuk memantau dan mengendalikan sistem pemilah sampah
-  otomatis berbasis IoT — SMA Negeri 1 Bandung.
+  otomatis berbasis IoT SMA Negeri 1 Bandung.
 publish_to: 'none'
 version: 1.0.0+1
 
