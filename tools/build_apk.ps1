@@ -1,20 +1,20 @@
 <#
   Build APK PilahPintar dengan toolchain di C:\Users\<user>\fltools.
 
+  Aplikasi hanya untuk HP Android 64-bit (arm64-v8a, ±19 MB).
+
   Contoh:
-    .\tools\build_apk.ps1                 # mode simulasi, APK arm64 (±19 MB)
+    .\tools\build_apk.ps1                 # mode simulasi
     .\tools\build_apk.ps1 -Firebase       # mode Firebase (butuh firebase_config.json)
-    .\tools\build_apk.ps1 -Universal      # APK semua arsitektur (±53 MB)
 
   Hasil build:
-    - Selalu disalin ke root proyek: PilahPintar-<versi>-<mode>-<abi>.apk
+    - Selalu disalin ke root proyek: PilahPintar-<versi>-<mode>-arm64.apk
       (diabaikan git).
-    - Build -Firebase juga disalin ke apk\PilahPintar-firebase-<abi>.apk.
+    - Build -Firebase juga disalin ke apk\PilahPintar-firebase-arm64.apk.
       File ini ikut ter-commit; namanya tetap agar link di GitHub tidak putus.
 #>
 param(
-  [switch]$Firebase,
-  [switch]$Universal
+  [switch]$Firebase
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,10 +36,7 @@ $env:TMP = $Tmp
 $env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$Tmp -Djava.io.tmpdir=$Tmp"
 $env:Path = "$($env:JAVA_HOME)\bin;$(Join-Path $Tools 'flutter\bin');$env:Path"
 
-$buildArgs = @('build', 'apk', '--release')
-if (-not $Universal) {
-  $buildArgs += @('--split-per-abi', '--target-platform', 'android-arm64')
-}
+$buildArgs = @('build', 'apk', '--release', '--split-per-abi', '--target-platform', 'android-arm64')
 $suffix = 'simulasi'
 if ($Firebase) {
   $config = Join-Path $Root 'firebase_config.json'
@@ -59,17 +56,15 @@ try {
   $ErrorActionPreference = 'Stop'
   if ($exitCode -ne 0) { throw "flutter build gagal ($exitCode)" }
   $version = (Select-String -Path 'pubspec.yaml' -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
-  $source = if ($Universal) { 'app-release.apk' } else { 'app-arm64-v8a-release.apk' }
-  $abi = if ($Universal) { 'universal' } else { 'arm64' }
-  $built = Join-Path $Root "build\app\outputs\flutter-apk\$source"
-  $target = Join-Path $Root "PilahPintar-$version-$suffix-$abi.apk"
+  $built = Join-Path $Root 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
+  $target = Join-Path $Root "PilahPintar-$version-$suffix-arm64.apk"
   Copy-Item $built $target -Force
   Write-Host "APK siap: $target"
 
   if ($Firebase) {
     $apkDir = Join-Path $Root 'apk'
     New-Item -ItemType Directory -Force $apkDir | Out-Null
-    $shared = Join-Path $apkDir "PilahPintar-firebase-$abi.apk"
+    $shared = Join-Path $apkDir 'PilahPintar-firebase-arm64.apk'
     Copy-Item $built $shared -Force
     $sizeMb = [math]::Round((Get-Item $shared).Length / 1MB, 1)
     Write-Host "Disalin ke: $shared (versi $version, $sizeMb MB)"

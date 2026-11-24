@@ -27,13 +27,12 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 
 ## Pasang di HP (APK siap pakai)
 
-Kedua APK di bawah ini sudah terhubung ke proyek Firebase `espdatabase-94f5b`
-dan butuh Android 7.0 ke atas:
+[`apk/PilahPintar-firebase-arm64.apk`](apk/PilahPintar-firebase-arm64.apk)
+(±19 MB) sudah terhubung ke proyek Firebase `paperiotesp32`.
 
-| File | Ukuran | Untuk |
-|---|---|---|
-| [`apk/PilahPintar-firebase-arm64.apk`](apk/PilahPintar-firebase-arm64.apk) | ±19 MB | Hampir semua HP Android (prosesor 64-bit). Coba ini dulu. |
-| [`apk/PilahPintar-firebase-universal.apk`](apk/PilahPintar-firebase-universal.apk) | ±53 MB | Semua HP, termasuk HP lama/Android Go 32-bit. Pakai jika versi arm64 gagal dipasang ("Aplikasi tidak terpasang"). |
+Aplikasi ini **hanya untuk HP Android 64-bit** (prosesor ARM 64-bit, Android
+7.0 ke atas). HP Android 32-bit tidak bisa memasangnya (muncul "Aplikasi tidak
+terpasang"), dan tidak ada versi iOS maupun web.
 
 - Unduh file APK ke HP, buka, lalu izinkan **Instal aplikasi tidak dikenal**.
 - Jika Play Protect memperingatkan, pilih **Detail lainnya → Tetap instal**.
@@ -42,10 +41,9 @@ dan butuh Android 7.0 ke atas:
   perangkat.".
 
 Untuk membuat ulang APK setelah kode diubah, jalankan
-`.\tools\build_apk.ps1 -Firebase` (arm64) dan
-`.\tools\build_apk.ps1 -Firebase -Universal` (universal). Skrip ini otomatis
-menimpa file di folder `apk/`, jadi tinggal commit dan push. Versi APK terlihat
-di aplikasi (**Pengaturan → Versi aplikasi**).
+`.\tools\build_apk.ps1 -Firebase`. Skrip ini otomatis menimpa file di folder
+`apk/`, jadi tinggal commit dan push. Versi APK terlihat di aplikasi
+(**Pengaturan → Versi aplikasi**).
 
 ## Menjalankan aplikasi (mode simulasi)
 
@@ -72,8 +70,10 @@ Mode simulasi tidak membutuhkan backend. Perilakunya:
 - Di Dashboard, ketuk kartu tempat sampah untuk membuka detail. Di sana ada
   tombol **Isi +10%** / **Kosongkan** untuk menguji notifikasi threshold.
 
-Folder `web/` disertakan agar demo juga bisa dibuka di browser
-(`flutter run -d chrome`). Push notification hanya muncul di Android dan iOS.
+Proyek hanya berisi platform Android (`android/`). Native library selain
+`arm64-v8a` dikeluarkan saat pengemasan APK (`packaging.jniLibs.excludes` di
+`android/app/build.gradle.kts`), sehingga emulator Android juga harus
+berarsitektur ARM 64-bit.
 
 ## Struktur proyek
 
@@ -131,9 +131,8 @@ Ringkasnya:
    ```
 
 `tools/build_apk.ps1` memakai toolchain di `%USERPROFILE%\fltools`. Tanpa
-`-Firebase`, skrip ini membuat APK mode simulasi; tambahkan `-Universal` untuk
-APK semua arsitektur. Sebagai alternatif, `flutterfire configure` boleh dipakai
-untuk menimpa `lib/firebase_options.dart`.
+`-Firebase`, skrip ini membuat APK mode simulasi. Sebagai alternatif,
+`flutterfire configure` boleh dipakai untuk menimpa `lib/firebase_options.dart`.
 
 Jika Firebase gagal diinisialisasi, aplikasi menampilkan pesan error. Aplikasi
 sengaja tidak beralih diam-diam ke data simulasi, supaya tidak ada data palsu

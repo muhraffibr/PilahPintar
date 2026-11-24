@@ -3,7 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/app_notification.dart';
 
-/// Push notification lokal untuk peringatan sistem (Android & iOS).
+/// Push notification lokal untuk peringatan sistem (Android).
 ///
 /// Peringatan dibuat oleh aplikasi saat mendeteksi perubahan data real-time
 /// (kapasitas melewati threshold, koneksi terputus, sistem berhenti tidak
@@ -20,17 +20,13 @@ class NotificationService {
   static const _channelDescription =
       'Kapasitas tempat sampah, koneksi perangkat, dan gangguan sistem.';
 
-  bool get isSupported =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  bool get isSupported => defaultTargetPlatform == TargetPlatform.android;
 
   Future<void> init() async {
     if (!isSupported) return;
     try {
       const settings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
       );
       await _plugin.initialize(settings: settings);
       await _plugin
@@ -58,7 +54,6 @@ class NotificationService {
             importance: Importance.high,
             priority: Priority.high,
           ),
-          iOS: DarwinNotificationDetails(),
         ),
       );
     } catch (e) {

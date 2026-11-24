@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
@@ -52,8 +51,8 @@ Future<TrashRepository> _createRepository() async {
       );
       final db = FirebaseDatabase.instance;
       // Cache lokal agar data terakhir tetap tampil (dengan label offline)
-      // saat ponsel kehilangan koneksi. Tidak didukung di web.
-      if (!kIsWeb) db.setPersistenceEnabled(true);
+      // saat ponsel kehilangan koneksi.
+      db.setPersistenceEnabled(true);
       return FirebaseTrashRepository(db);
     case DataSourceMode.mock:
       return MockTrashRepository.create();

@@ -31,6 +31,15 @@ android {
         versionName = flutter.versionName
     }
 
+    // Hanya HP Android 64-bit (ARM): native library 32-bit dan x86 tidak ikut
+    // dikemas, sehingga HP 32-bit tidak bisa memasang APK ("Aplikasi tidak
+    // terpasang"). abiFilters tidak dipakai karena selalu ditimpa plugin Flutter.
+    packaging {
+        jniLibs {
+            excludes += setOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
