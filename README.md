@@ -31,8 +31,7 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 (±19 MB) sudah terhubung ke proyek Firebase `paperiotesp32`.
 
 Aplikasi ini **hanya untuk HP Android 64-bit** (prosesor ARM 64-bit, Android
-7.0 ke atas). HP Android 32-bit tidak bisa memasangnya (muncul "Aplikasi tidak
-terpasang"), dan tidak ada versi iOS maupun web.
+7.0 ke atas). 
 
 - Unduh file APK ke HP, buka, lalu izinkan **Instal aplikasi tidak dikenal**.
 - Jika Play Protect memperingatkan, pilih **Detail lainnya → Tetap instal**.
