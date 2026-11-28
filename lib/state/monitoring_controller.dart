@@ -12,7 +12,6 @@ import '../models/system_status.dart';
 import '../models/waste_bin.dart';
 import '../models/waste_category.dart';
 import '../models/waste_sorting.dart';
-import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 
 /// Kondisi keseluruhan aplikasi (PRD §13).
@@ -82,16 +81,12 @@ class MonitoringController extends ChangeNotifier {
   MonitoringController({
     required this.repository,
     required this.notificationService,
-    this.auth,
     DateTime Function()? clock,
   })  : _clock = clock ?? DateTime.now,
         _todayStart = startOfDay((clock ?? DateTime.now)());
 
   final TrashRepository repository;
   final NotificationService notificationService;
-
-  /// Login operator; `null` pada mode simulasi (tanpa login).
-  final AuthService? auth;
 
   /// `false` saat foreground service (BackgroundMonitor) berjalan: service
   /// itulah yang menampilkan push, sehingga aplikasi utama hanya menampilkan
@@ -546,10 +541,6 @@ class MonitoringController extends ChangeNotifier {
       return _failCommand(
           'Server tidak merespons. Periksa koneksi internet ponsel.');
     } catch (e) {
-      if (isPermissionDenied(e)) {
-        return _failCommand('Akun ini bukan operator, jadi tidak boleh '
-            'mengirim perintah. Hubungi admin.');
-      }
       return _failCommand('Gagal mengirim perintah: $e');
     }
 
@@ -595,14 +586,6 @@ class MonitoringController extends ChangeNotifier {
         'EXPIRED' => 'Perintah kedaluwarsa sebelum diterima perangkat.',
         _ => 'Perangkat menolak perintah${reason.isEmpty ? '' : ' ($reason)'}.',
       };
-
-  /// `true` bila error berasal dari security rules Firebase.
-  static bool isPermissionDenied(Object e) {
-    final text = e.toString().toLowerCase();
-    return text.contains('permission-denied') ||
-        text.contains('permission_denied') ||
-        text.contains('permission denied');
-  }
 
   void dismissCommandError() {
     if (_commandPhase != CommandPhase.failed) return;
@@ -653,15 +636,7 @@ class MonitoringController extends ChangeNotifier {
     _settings = settings.sanitized();
     _evaluateBinAlerts();
     _notify();
-    try {
-      await repository.updateSettings(_settings);
-    } catch (e) {
-      if (isPermissionDenied(e)) {
-        throw StateError('akun ini bukan operator, pengaturan hanya bisa '
-            'diubah oleh operator');
-      }
-      rethrow;
-    }
+    await repository.updateSettings(_settings);
   }
 
   Future<List<WasteSorting>> fetchHistory(DateTime from, DateTime to) =>

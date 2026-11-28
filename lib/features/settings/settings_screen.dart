@@ -9,22 +9,20 @@ import '../../core/theme/theme_mode_controller.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/mock/mock_trash_repository.dart';
 import '../../models/app_settings.dart';
-import '../../services/auth_service.dart';
 import '../../services/background_monitor.dart';
 import '../../state/monitoring_controller.dart';
 import '../../widgets/common.dart';
 
 /// Pengaturan: notifikasi & threshold, info sistem, info aplikasi (PRD §7).
-/// Mode Firebase menampilkan kartu akun (email, peran, tombol Keluar);
-/// mode simulasi tidak memakai login.
+/// Tidak ada login/logout/profil — aplikasi tidak memakai akun pengguna.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.read<MonitoringController>();
-    final repo = controller.repository;
-    final auth = controller.auth;
+    final repo = context.read<MonitoringController>().repository;
+    // Pemantauan latar belakang hanya untuk data sungguhan (mode Firebase).
+    final realDevice = repo is! MockTrashRepository;
     return Scaffold(
       appBar: AppBar(titleSpacing: 20, title: const Text('Pengaturan')),
       body: ListView(
@@ -50,16 +48,12 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   _SimulationCard(repo: repo),
                 ],
-                if (auth != null && BackgroundMonitor.isSupported) ...[
+                if (realDevice && BackgroundMonitor.isSupported) ...[
                   const SectionHeader(
                     title: 'Pemantauan Latar Belakang',
                     subtitle: 'Peringatan tetap datang saat aplikasi ditutup',
                   ),
                   const _BackgroundMonitorCard(),
-                ],
-                if (auth != null) ...[
-                  const SectionHeader(title: 'Akun'),
-                  _AccountCard(auth: auth),
                 ],
                 const SectionHeader(title: 'Application Information'),
                 const _AppInfoCard(),
@@ -414,72 +408,6 @@ class _SimulationCardState extends State<_SimulationCard> {
             'Kapasitas tiap tempat sampah juga bisa diubah dari detail kartu '
             'di Dashboard (Isi +10% / Kosongkan).',
             style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AccountCard extends StatelessWidget {
-  const _AccountCard({required this.auth});
-
-  final AuthService auth;
-
-  Future<void> _signOut(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Keluar dari akun?'),
-        content: const Text(
-            'Pemantauan berhenti di ponsel ini sampai Anda masuk kembali.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Keluar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    // Hentikan service dulu: tanpa login, rules menolak semua baca.
-    await BackgroundMonitor.stop();
-    await auth.signOut();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InfoRow(
-            icon: Icons.person_outline_rounded,
-            label: 'Masuk sebagai',
-            value: auth.email ?? '-',
-          ),
-          FutureBuilder<bool>(
-            future: auth.isOperator(),
-            builder: (context, snap) => InfoRow(
-              icon: Icons.verified_user_outlined,
-              label: 'Peran',
-              value: !snap.hasData
-                  ? 'Memeriksa…'
-                  : (snap.data!
-                      ? 'Operator (boleh START/STOP & ubah pengaturan)'
-                      : 'Pemantau (hanya melihat data)'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () => _signOut(context),
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Keluar'),
           ),
         ],
       ),

@@ -1,22 +1,9 @@
 {
   "rules": {
-    ".read": false,
+    ".read": true,
     ".write": false,
 
-    "operators": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid"
-      }
-    },
-
-    "devices": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid"
-      }
-    },
-
     "system_status": {
-      ".read": "auth != null",
       ".write": "auth != null && root.child('devices').child(auth.uid).val() === true",
       ".validate": "newData.hasChildren(['system_status', 'conveyor_status', 'connection_status', 'last_updated'])",
       "system_status": { ".validate": "newData.val() === 'ON' || newData.val() === 'OFF'" },
@@ -28,7 +15,6 @@
     },
 
     "bins": {
-      ".read": "auth != null",
       ".write": "auth != null && root.child('devices').child(auth.uid).val() === true",
       "$category": {
         ".validate": "($category === 'organik' || $category === 'recyclable' || $category === 'logam' || $category === 'anorganik') && newData.hasChildren(['category', 'capacity_percentage', 'last_updated'])",
@@ -37,7 +23,6 @@
     },
 
     "sortings": {
-      ".read": "auth != null",
       ".write": "auth != null && root.child('devices').child(auth.uid).val() === true",
       ".indexOn": ["timestamp"],
       "$id": {
@@ -48,30 +33,22 @@
     },
 
     "commands": {
-      ".read": "auth != null",
       "latest": {
-        ".write": "auth != null && root.child('operators').child(auth.uid).val() === true",
+        ".write": true,
         ".validate": "newData.hasChildren(['command', 'issued_at', 'status'])",
         "command": { ".validate": "newData.val() === 'START' || newData.val() === 'STOP'" },
         "issued_at": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
-        "status": {
-          ".write": "auth != null && root.child('devices').child(auth.uid).val() === true && newData.val() !== 'PENDING'",
-          ".validate": "newData.val() === 'PENDING' || newData.val() === 'ACK' || newData.val() === 'DONE' || newData.val() === 'FAILED'"
-        },
-        "reason": {
-          ".write": "auth != null && root.child('devices').child(auth.uid).val() === true",
-          ".validate": "newData.isString() && newData.val().length <= 40"
-        },
+        "status": { ".validate": "newData.val() === 'PENDING' || newData.val() === 'ACK' || newData.val() === 'DONE' || newData.val() === 'FAILED'" },
+        "reason": { ".validate": "newData.isString() && newData.val().length <= 40" },
         "source": { ".validate": "newData.isString() && newData.val().length <= 40" },
         "$other": { ".validate": false }
       }
     },
 
     "notifications": {
-      ".read": "auth != null",
       ".indexOn": ["timestamp"],
       "$id": {
-        ".write": "auth != null && root.child('operators').child(auth.uid).val() === true",
+        ".write": true,
         ".validate": "newData.hasChildren(['type', 'message', 'timestamp', 'is_read'])",
         "type": { ".validate": "newData.val() === 'ALMOST_FULL' || newData.val() === 'FULL' || newData.val() === 'CONNECTION_LOST' || newData.val() === 'ABNORMAL_STOP' || newData.val() === 'INFO'" },
         "message": { ".validate": "newData.isString() && newData.val().length <= 200" },
@@ -81,8 +58,7 @@
     },
 
     "settings": {
-      ".read": "auth != null",
-      ".write": "auth != null && root.child('operators').child(auth.uid).val() === true",
+      ".write": true,
       ".validate": "newData.hasChildren(['notification_enabled', 'almost_full_threshold', 'full_threshold']) && newData.child('almost_full_threshold').val() + 5 <= newData.child('full_threshold').val()",
       "notification_enabled": { ".validate": "newData.isBoolean()" },
       "almost_full_threshold": { ".validate": "newData.isNumber() && newData.val() >= 50 && newData.val() <= 95" },

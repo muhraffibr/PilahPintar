@@ -1,7 +1,4 @@
 {
-  "operators": {
-    "GANTI_DENGAN_UID_OPERATOR": true
-  },
   "devices": {
     "GANTI_DENGAN_UID_ESP32": true
   },

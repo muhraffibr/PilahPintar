@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
@@ -157,14 +156,6 @@ class _MonitorTaskHandler extends TaskHandler {
     await initializeDateFormatting('id_ID');
     Intl.defaultLocale = 'id_ID';
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-    // Sesi login disimpan Firebase Auth di native, jadi juga tersedia di sini
-    // (termasuk setelah ponsel dinyalakan ulang). Tanpa login, rules menolak
-    // semua baca, jadi service dihentikan.
-    if (FirebaseAuth.instance.currentUser == null) {
-      await FlutterForegroundTask.stopService();
-      return;
-    }
 
     final notifications = NotificationService(requestPermission: false);
     await notifications.init();

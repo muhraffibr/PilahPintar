@@ -26,8 +26,6 @@ dependencies:
   # Backend: Firebase Realtime Database
   firebase_core: ^4.15.0
   firebase_database: ^12.6.0
-  # Login operator (Email/Password); rules RTDB mewajibkan auth
-  firebase_auth: ^6.7.1
 
   # Push notification lokal (peringatan kapasitas, koneksi, error)
   flutter_local_notifications: ^22.3.1

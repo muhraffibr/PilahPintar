@@ -28,26 +28,19 @@ dan menulis Firebase. Jadi ESP32 dan HP tidak perlu berada di Wi-Fi yang sama.
 3. Tab **Rules**: tempel isi [`../firebase/database.rules.json`](../firebase/database.rules.json),
    lalu **Publish**.
 4. **Build → Authentication → Get started → Email/Password → Enable**.
-   Lalu di tab **Users → Add user**, buat dua jenis akun:
-   - **Akun perangkat** untuk ESP32, misalnya `esp32@pilahpintar.id`.
-   - **Akun operator** untuk setiap petugas yang boleh START/STOP dan
-     mengubah pengaturan dari aplikasi, misalnya `operator@pilahpintar.id`.
-   Aplikasi tidak menyediakan pendaftaran akun; semua akun dibuat di sini.
-   Opsional: **Authentication → Settings → User actions**, matikan
-   *Enable create (sign-up)* agar orang lain tidak bisa membuat akun sendiri
-   lewat API.
-5. **Daftarkan UID ke allowlist** (hanya bisa dari Console, rules menolak
-   penulisan dari aplikasi/perangkat). Salin kolom **User UID** tiap akun di
+   Lalu di tab **Users → Add user**, buat akun khusus perangkat, misalnya
+   `esp32@pilahpintar.id`. Akun ini hanya dipakai ESP32; aplikasi tidak
+   memakai login.
+5. **Daftarkan UID akun ESP32.** Salin kolom **User UID** akun tadi di
    **Authentication → Users**, lalu di **Realtime Database → Data** tambahkan:
 
    ```
-   operators/<UID akun operator>: true
    devices/<UID akun ESP32>: true
    ```
 
-   (klik **+** di root, isi *Key* `operators`, lalu tambahkan anak dengan *Key*
-   = UID dan *Value* `true`; ulangi untuk `devices`.) Jika memakai
-   `firebase/seed_data.json`, ganti `GANTI_DENGAN_UID_OPERATOR` dan
+   (klik **+** di root, isi *Key* `devices`, lalu tambahkan anak dengan *Key*
+   = UID dan *Value* `true`.) Hanya akun yang terdaftar di sini yang boleh
+   menulis data alat. Jika memakai `firebase/seed_data.json`, ganti
    `GANTI_DENGAN_UID_ESP32` sebelum impor.
 6. **Project settings (⚙) → General**:
    - Catat **Web API Key**.
@@ -68,46 +61,45 @@ dan menulis Firebase. Jadi ESP32 dan HP tidak perlu berada di Wi-Fi yang sama.
    .\tools\build_apk.ps1 -Firebase
    ```
 
-3. Pasang `PilahPintar-1.0.0-firebase-arm64.apk` di HP, lalu **masuk dengan
-   akun operator**. Sesi tersimpan; tombol **Keluar** ada di Pengaturan → Akun.
-   Sebelum ESP32 menyala, Dashboard akan menampilkan **"Menunggu koneksi ke
-   perangkat."**.
+3. Pasang `PilahPintar-1.0.0-firebase-arm64.apk` di HP. Aplikasi langsung
+   membuka Dashboard tanpa login. Sebelum ESP32 menyala, Dashboard akan
+   menampilkan **"Menunggu koneksi ke perangkat."**.
 
 ### Siapa boleh apa (database.rules.json)
 
-| Node | Belum login | Akun login (bukan operator) | Operator (`/operators/<uid>`) | ESP32 (`/devices/<uid>`) |
-|---|---|---|---|---|
-| Semua data (baca) | ditolak | baca | baca | baca |
-| `system_status`, `bins`, `sortings` | ditolak | ditolak | ditolak | tulis |
-| `commands/latest` (perintah baru) | ditolak | ditolak | tulis | ditolak |
-| `commands/latest/status`, `/reason` | ditolak | ditolak | tulis | tulis (kecuali `PENDING`) |
-| `settings`, `notifications` | ditolak | ditolak | tulis | ditolak |
-| `operators`, `devices` | ditolak | hanya entri UID sendiri (baca) | hanya entri UID sendiri (baca) | hanya entri UID sendiri (baca) |
+| Node | Aplikasi / siapa pun (tanpa login) | ESP32 (`/devices/<uid>`) |
+|---|---|---|
+| Semua data (baca) | baca | baca |
+| `system_status`, `bins`, `sortings` | ditolak | tulis |
+| `commands/latest` | tulis (format divalidasi) | tulis (format divalidasi) |
+| `settings`, `notifications` | tulis (format divalidasi) | tulis (format divalidasi) |
+| `devices` | baca | baca |
 
-Semua aturan `.validate` (format, rentang threshold, kategori) tetap berlaku.
+Semua aturan `.validate` (format, rentang threshold, kategori) berlaku. Karena
+aplikasi tidak memakai login, siapa pun yang mengetahui URL database dapat
+membaca data dan mengirim perintah START/STOP dengan format yang benar. Risiko
+ini dikurangi oleh validasi rules, dialog konfirmasi di aplikasi, dan
+keselamatan di STM32 (tombol darurat dengan reset lokal). Untuk penggunaan di
+luar prototype, tambahkan Firebase App Check atau login.
 
 **Uji di Rules Playground** (Realtime Database → Rules → *Rules Playground*).
-Untuk "operator" dan "ESP32", centang *Authenticated*, pilih provider
-*password*, dan isi UID yang sudah didaftarkan di `/operators` atau `/devices`.
-Untuk "akun biasa", pakai UID acak yang tidak terdaftar.
+Untuk "ESP32", centang *Authenticated*, pilih provider *password*, dan isi UID
+yang sudah didaftarkan di `/devices`. Untuk "akun lain", pakai UID acak.
 
 | # | Tipe | Lokasi | Data | Auth | Harus |
 |---|---|---|---|---|---|
-| 1 | read | `/system_status` | – | tidak login | ditolak |
-| 2 | read | `/system_status` | – | akun biasa | diizinkan |
-| 3 | set | `/commands/latest` | `{"command":"START","issued_at":1759556601000,"status":"PENDING","source":"x"}` | tidak login | ditolak |
-| 4 | set | `/commands/latest` | sama dengan #3 | akun biasa | ditolak |
-| 5 | set | `/commands/latest` | sama dengan #3 | operator | diizinkan |
-| 6 | set | `/commands/latest` | sama dengan #3 | ESP32 | ditolak |
-| 7 | update | `/commands/latest` | `{"status":"FAILED","reason":"LOCAL_RESET"}` | ESP32 | diizinkan |
-| 8 | update | `/commands/latest` | `{"status":"PENDING"}` | ESP32 | ditolak |
-| 9 | update | `/commands/latest` | `{"command":"STOP"}` | ESP32 | ditolak |
-| 10 | set | `/settings` | `{"notification_enabled":true,"almost_full_threshold":70,"full_threshold":90}` | operator / akun biasa | diizinkan / ditolak |
-| 11 | update | `/system_status` | `{"system_status":"ON"}` | ESP32 / operator | diizinkan / ditolak |
-| 12 | set | `/operators/<uid sendiri>` | `true` | operator | ditolak |
+| 1 | read | `/system_status` | – | tidak login | diizinkan |
+| 2 | set | `/commands/latest` | `{"command":"START","issued_at":1759556601000,"status":"PENDING","source":"x"}` | tidak login | diizinkan |
+| 3 | set | `/commands/latest` | `{"command":"JALAN","issued_at":1759556601000,"status":"PENDING"}` | tidak login | ditolak (validasi) |
+| 4 | set | `/settings` | `{"notification_enabled":true,"almost_full_threshold":70,"full_threshold":90}` | tidak login | diizinkan |
+| 5 | set | `/settings` | `{"notification_enabled":true,"almost_full_threshold":90,"full_threshold":80}` | tidak login | ditolak (validasi) |
+| 6 | update | `/system_status` | `{"system_status":"ON"}` | tidak login | ditolak |
+| 7 | update | `/system_status` | `{"system_status":"ON"}` | akun lain | ditolak |
+| 8 | update | `/system_status` | `{"system_status":"ON"}` | ESP32 | diizinkan |
+| 9 | update | `/commands/latest` | `{"status":"FAILED","reason":"LOCAL_RESET"}` | ESP32 | diizinkan |
+| 10 | set | `/devices/<uid>` | `true` | ESP32 | ditolak |
 
-Untuk #7–#9, `/commands/latest` harus sudah berisi perintah (jalankan #5 lebih
-dulu di Console, atau impor seed data).
+Untuk #6–#9, node tujuan harus sudah berisi data (impor seed data dulu).
 
 ---
 
@@ -684,7 +676,6 @@ diperlukan" sampai tombol RESET ditekan.
 | Aplikasi tetap "Menunggu koneksi ke perangkat." | ESP32 belum pernah menulis `system_status`. Lihat Serial Monitor: Wi-Fi gagal? Login Firebase gagal (`fb=belum`)? |
 | `Login Firebase gagal (... 400 ...)` | Email/password akun perangkat salah, atau Email/Password belum di-enable di Authentication |
 | `PATCH 401` / `Permission denied` | Rules belum dipublish, ESP32 belum login, atau UID akun ESP32 belum ada di `/devices` |
-| Aplikasi: "Akun ini bukan operator" | UID akun yang login belum ada di `/operators` (Firebase Console → Realtime Database) |
 | Aplikasi "Offline" padahal ESP32 menyala | Heartbeat gagal terkirim, cek pesan `[FB] heartbeat gagal`. Pastikan Wi-Fi 2,4 GHz |
 | Error "STM32 tidak merespons" | Kabel TX/RX tertukar, GND tidak tersambung, atau baud rate berbeda |
 | Kapasitas selalu 0% atau 100% | Kalibrasi `BIN_EMPTY_DISTANCE_CM` / `BIN_FULL_DISTANCE_CM`; lihat nilai `jarak=` di Serial Monitor |
