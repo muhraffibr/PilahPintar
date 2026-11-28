@@ -37,12 +37,16 @@ void main() {
 
     expect(controller.isLoading, isFalse);
     expect(controller.deviceOnline, isTrue);
-    expect(controller.system!.isOn, isTrue);
+    // Bawaan saat aplikasi dibuka: sistem OFF, konveyor STOPPED.
+    expect(controller.system!.isOn, isFalse);
+    expect(controller.system!.conveyorRunning, isFalse);
+    expect(controller.canStart, isTrue);
+    expect(controller.canStop, isFalse);
     expect(controller.binFor(WasteCategory.anorganik)!.capacityPercentage, 91);
     expect(controller.levelFor(WasteCategory.anorganik), BinLevel.full);
     expect(controller.levelFor(WasteCategory.logam), BinLevel.almostFull);
     expect(controller.levelFor(WasteCategory.organik), BinLevel.normal);
-    expect(controller.overallState, OverallState.full);
+    expect(controller.overallState, OverallState.systemOff);
   });
 
   test('melewati threshold membuat notifikasi (sekali saja)', () async {
@@ -77,8 +81,11 @@ void main() {
     expect(controller.levelFor(WasteCategory.organik), BinLevel.almostFull);
   });
 
-  test('STOP → konfirmasi perangkat → status OFF / STOPPED', () async {
+  test('START lalu STOP → konfirmasi perangkat → status OFF / STOPPED', () async {
     await _settle();
+    final started = await controller.sendCommand(SystemCommand.start);
+    expect(started.success, isTrue);
+    expect(controller.system!.conveyorRunning, isTrue);
     expect(controller.canStop, isTrue);
 
     final outcome = await controller.sendCommand(SystemCommand.stop);
@@ -123,5 +130,42 @@ void main() {
     expect(controller.system!.hasError, isFalse);
     expect(controller.system!.conveyorRunning, isTrue);
     expect(controller.overallState, isNot(OverallState.error));
+  });
+
+  test('START ditolak LOCAL_RESET menampilkan pesan reset di mesin', () async {
+    await _settle();
+    repo.simulateConveyorFault();
+    await _settle();
+    repo.startRejectReason = 'LOCAL_RESET';
+
+    final outcome = await controller.sendCommand(SystemCommand.start);
+    expect(outcome.success, isFalse);
+    expect(outcome.message, startsWith('Reset tombol di mesin diperlukan'));
+    expect(controller.commandPhase, CommandPhase.failed);
+    expect(controller.commandError, outcome.message);
+  });
+
+  test('saat foreground service aktif, peringatan tetap dicatat & muncul di aplikasi',
+      () async {
+    await _settle();
+    controller.pushNotifications = false; // service yang menampilkan push
+    final alerts = <AppNotification>[];
+    final sub = controller.alerts.listen(alerts.add);
+    final before = controller.notifications.length;
+
+    repo.addCapacity(WasteCategory.organik, 30); // 65 → 95% (penuh)
+    await _settle();
+
+    expect(alerts.single.type, NotificationType.full);
+    expect(controller.notifications.length, before + 1);
+    expect(controller.binCategoriesAt(BinLevel.full), contains(WasteCategory.organik));
+    await sub.cancel();
+  });
+
+  test('ID notifikasi Android deterministik, tidak bentrok dengan service', () {
+    final a = NotificationService.androidIdFor('FULL_logam_1759556601000');
+    expect(a, NotificationService.androidIdFor('FULL_logam_1759556601000'));
+    expect(a, greaterThanOrEqualTo(10000));
+    expect(a, isNot(9001));
   });
 }

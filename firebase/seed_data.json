@@ -1,7 +1,13 @@
 {
+  "operators": {
+    "GANTI_DENGAN_UID_OPERATOR": true
+  },
+  "devices": {
+    "GANTI_DENGAN_UID_ESP32": true
+  },
   "system_status": {
-    "system_status": "ON",
-    "conveyor_status": "RUNNING",
+    "system_status": "OFF",
+    "conveyor_status": "STOPPED",
     "connection_status": "CONNECTED",
     "last_updated": 1759556601000,
     "error": ""
@@ -45,7 +51,7 @@
   },
   "commands": {
     "latest": {
-      "command": "START",
+      "command": "STOP",
       "issued_at": 1759550400000,
       "status": "DONE",
       "source": "mobile_app"

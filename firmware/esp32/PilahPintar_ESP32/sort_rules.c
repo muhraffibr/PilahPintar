@@ -13,10 +13,10 @@ sr_result_t sr_classify(const sr_features_t *f, const sr_config_t *cfg) {
   if (f->soil_min_raw >= 0 && f->soil_min_raw <= cfg->soil_wet_raw) {
     return result(SR_ORGANIK, "Organik (basah)");
   }
+  if (f->raindrop) return result(SR_ORGANIK, "Organik (raindrop)");
 
   if (f->height_mm >= cfg->bottle_min_height_mm) {
-    if (cfg->styrofoam_min_signal_mcps > 0 &&
-        f->signal_mcps >= cfg->styrofoam_min_signal_mcps) {
+    if (cfg->styrofoam_by_bright && f->bright) {
       return result(SR_ANORGANIK, "Styrofoam (terang)");
     }
     return result(SR_RECYCLABLE, "Botol (tinggi)");
@@ -26,9 +26,8 @@ sr_result_t sr_classify(const sr_features_t *f, const sr_config_t *cfg) {
     return result(SR_ORGANIK, "Organik (kapasitif)");
   }
 
-  if (cfg->paper_min_signal_mcps > 0 && f->height_mm > 0 &&
-      f->height_mm <= cfg->paper_max_height_mm &&
-      f->signal_mcps >= cfg->paper_min_signal_mcps) {
+  if (cfg->paper_by_bright && f->height_mm > 0 &&
+      f->height_mm <= cfg->paper_max_height_mm && f->bright) {
     return result(SR_RECYCLABLE, "Kertas (terang)");
   }
 

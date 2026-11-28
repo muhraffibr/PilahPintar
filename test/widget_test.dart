@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trash_monitor/app.dart';
+import 'package:trash_monitor/core/theme/theme_mode_controller.dart';
 import 'package:trash_monitor/data/mock/mock_trash_repository.dart';
 import 'package:trash_monitor/services/notification_service.dart';
 import 'package:trash_monitor/state/monitoring_controller.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('id_ID'));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    ThemeModeController.instance.value = ThemeMode.system;
+  });
 
   Future<void> pumpApp(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2340); // 360 × 780 dp
@@ -40,7 +46,8 @@ void main() {
 
     expect(find.text('Dashboard'), findsWidgets);
     expect(find.text('System Status'), findsOneWidget);
-    expect(find.text('ONLINE'), findsOneWidget);
+    // Bawaan saat aplikasi dibuka: sistem dan konveyor mati.
+    expect(find.text('SYSTEM OFF'), findsOneWidget);
     for (final label in ['Organik', 'Recyclable', 'Logam', 'Anorganik']) {
       expect(find.text(label), findsWidgets);
     }
@@ -59,10 +66,22 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('STOP menampilkan dialog konfirmasi', (tester) async {
+  testWidgets('START dan STOP menampilkan dialog konfirmasi', (tester) async {
     await pumpApp(tester);
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(seconds: 1));
+
+    // Sistem mati saat dibuka: START dulu.
+    await tester.ensureVisible(find.text('START SYSTEM'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('START SYSTEM'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Jalankan sistem?'), findsOneWidget);
+    await tester.tap(find.text('Ya, jalankan'));
+    await tester.pump(const Duration(milliseconds: 500)); // tulis perintah
+    await tester.pump(const Duration(seconds: 1)); // perangkat menjalankan
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('ONLINE'), findsOneWidget);
 
     await tester.ensureVisible(find.text('STOP SYSTEM'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -96,6 +115,37 @@ void main() {
     expect(find.text('Notification Settings'), findsOneWidget);
     expect(find.text('Almost Full Threshold'), findsOneWidget);
     expect(find.text('Full Threshold'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('switch Mode gelap mengganti tema dan tersimpan', (tester) async {
+    await pumpApp(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(seconds: 1));
+
+    await tester.tap(find.text('Pengaturan').last);
+    await tester.pump(const Duration(seconds: 1));
+    final tile = find.widgetWithText(SwitchListTile, 'Mode gelap');
+    await tester.ensureVisible(tile);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    BuildContext ctx() => tester.element(find.text('Mode gelap'));
+    expect(Theme.of(ctx()).brightness, Brightness.light);
+
+    await tester.tap(tile);
+    await tester.pump(); // rebuild MaterialApp
+    await tester.pump(const Duration(seconds: 1)); // animasi tema selesai
+    expect(ThemeModeController.instance.value, ThemeMode.dark);
+    expect(Theme.of(ctx()).brightness, Brightness.dark);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('theme_mode'), 'dark');
+
+    await tester.tap(tile);
+    await tester.pump(); // rebuild MaterialApp
+    await tester.pump(const Duration(seconds: 1)); // animasi tema selesai
+    expect(Theme.of(ctx()).brightness, Brightness.light);
+    expect(prefs.getString('theme_mode'), 'light');
 
     await tester.pumpWidget(const SizedBox());
   });

@@ -13,8 +13,12 @@
  *   - CS = XOR semua byte di antara '$' dan '*', ditulis 2 digit hex.
  *     Contoh: "$CMD,START*" -> CS dihitung dari "CMD,START".
  *   - Diakhiri '\n' ('\r' diabaikan).
- *   - "*CS" boleh dihilangkan (PP_ALLOW_NO_CHECKSUM) agar mudah diuji
- *     dengan mengetik manual di Serial Monitor. Jika ada, wajib benar.
+ *   - "*CS" WAJIB ada dan benar (PP_ALLOW_NO_CHECKSUM 0). Frame tanpa
+ *     checksum atau dengan checksum salah dibuang, agar derau motor pada
+ *     kabel UART tidak bisa menjalankan perintah yang rusak.
+ *   - Pengecualian hanya untuk konsol USB ESP32 (mengetik $CAL,ON manual di
+ *     Serial Monitor): reader tersebut memasang allow_no_checksum = true.
+ *     Reader UART ESP32 <-> STM32 tidak pernah memasangnya.
  */
 #ifndef PP_PROTOCOL_H
 #define PP_PROTOCOL_H
@@ -32,7 +36,7 @@ extern "C" {
 #define PP_MAX_TOKEN 24     /* panjang maksimum TIPE / satu field + '\0' */
 
 #ifndef PP_ALLOW_NO_CHECKSUM
-#define PP_ALLOW_NO_CHECKSUM 1
+#define PP_ALLOW_NO_CHECKSUM 0
 #endif
 
 typedef struct {
@@ -54,16 +58,24 @@ typedef struct {
   uint8_t len;
   bool in_frame;
   bool overflow;
+  bool allow_no_checksum; /* default false; true hanya untuk konsol USB */
 } pp_reader_t;
 
+/* Mengosongkan reader; allow_no_checksum = PP_ALLOW_NO_CHECKSUM. */
 void pp_reader_init(pp_reader_t *r);
 
 /* Masukkan satu byte dari UART. Mengembalikan PP_MSG jika satu frame valid
  * selesai diterima (hasilnya di *out). */
 pp_result_t pp_reader_feed(pp_reader_t *r, char c, pp_msg_t *out);
 
-/* Parse satu baris tanpa '$' di depan dan tanpa '\n', mis. "CMD,START*4B". */
+/* Parse satu baris tanpa '$' di depan dan tanpa '\n', mis. "CMD,START*26".
+ * Tanpa "*CS" -> PP_ERR_CHECKSUM, kecuali PP_ALLOW_NO_CHECKSUM. */
 pp_result_t pp_parse_body(const char *body, size_t len, pp_msg_t *out);
+
+/* Sama dengan pp_parse_body, tetapi izin frame tanpa checksum ditentukan
+ * pemanggil (untuk pesan internal/konsol, bukan kabel UART). */
+pp_result_t pp_parse_body_ex(const char *body, size_t len, pp_msg_t *out,
+                             bool allow_no_checksum);
 
 /* XOR semua byte s[0..n-1]. */
 uint8_t pp_checksum(const char *s, size_t n);

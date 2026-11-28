@@ -9,6 +9,7 @@ import 'package:trash_monitor/models/system_status.dart';
 import 'package:trash_monitor/models/waste_bin.dart';
 import 'package:trash_monitor/models/waste_category.dart';
 import 'package:trash_monitor/models/waste_sorting.dart';
+import 'package:trash_monitor/state/monitoring_controller.dart';
 
 void main() {
   // Nilai {".sv":"timestamp"} sudah diganti server menjadi epoch milidetik.
@@ -97,5 +98,41 @@ void main() {
       expect(record.command, SystemCommand.stop);
       expect(record.status.code, status);
     }
+  });
+
+  test('commands/latest FAILED + reason dari \$NAK STM32', () {
+    // patchCommandStatus("FAILED", "LOCAL_RESET") setelah $NAK,START,LOCAL_RESET
+    final record = CommandRecord.tryFromMap({
+      'command': 'START',
+      'issued_at': serverTime,
+      'status': 'FAILED',
+      'reason': 'LOCAL_RESET',
+      'source': 'mobile_app',
+    })!;
+    expect(record.status, CommandStatus.failed);
+    expect(record.reason, 'LOCAL_RESET');
+    expect(MonitoringController.describeDeviceFailure('LOCAL_RESET'),
+        startsWith('Reset tombol di mesin diperlukan'));
+
+    // Perintah baru dari aplikasi (set) tidak membawa reason.
+    final fresh = CommandRecord.tryFromMap({
+      'command': 'START',
+      'issued_at': serverTime,
+      'status': 'PENDING',
+      'source': 'mobile_app',
+    })!;
+    expect(fresh.reason, isNull);
+  });
+
+  test('system_status.error untuk gangguan 5 (menunggu reset lokal)', () {
+    final s = SystemStatus.fromMap(asStringMap({
+      'system_status': 'OFF',
+      'conveyor_status': 'STOPPED',
+      'connection_status': 'CONNECTED',
+      'last_updated': serverTime,
+      'error': 'Reset tombol di mesin diperlukan (tombol darurat sudah dilepas)',
+    })!);
+    expect(s.hasError, isTrue);
+    expect(s.errorMessage, contains('Reset tombol di mesin diperlukan'));
   });
 }

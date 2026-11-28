@@ -9,6 +9,7 @@ void pp_reader_init(pp_reader_t *r) {
   r->len = 0;
   r->in_frame = false;
   r->overflow = false;
+  r->allow_no_checksum = PP_ALLOW_NO_CHECKSUM != 0;
 }
 
 uint8_t pp_checksum(const char *s, size_t n) {
@@ -32,6 +33,11 @@ static bool copy_token(char *dst, const char *src, size_t n) {
 }
 
 pp_result_t pp_parse_body(const char *body, size_t len, pp_msg_t *out) {
+  return pp_parse_body_ex(body, len, out, PP_ALLOW_NO_CHECKSUM != 0);
+}
+
+pp_result_t pp_parse_body_ex(const char *body, size_t len, pp_msg_t *out,
+                             bool allow_no_checksum) {
   /* Pisahkan checksum bila ada. */
   size_t data_len = len;
   for (size_t i = 0; i < len; i++) {
@@ -48,8 +54,8 @@ pp_result_t pp_parse_body(const char *body, size_t len, pp_msg_t *out) {
     if (pp_checksum(body, data_len) != (uint8_t)((hi << 4) | lo)) {
       return PP_ERR_CHECKSUM;
     }
-  } else if (!PP_ALLOW_NO_CHECKSUM) {
-    return PP_ERR_CHECKSUM;
+  } else if (!allow_no_checksum) {
+    return PP_ERR_CHECKSUM; /* frame tanpa "*CS" ditolak */
   }
 
   memset(out, 0, sizeof(*out));
@@ -87,7 +93,7 @@ pp_result_t pp_reader_feed(pp_reader_t *r, char c, pp_msg_t *out) {
     r->in_frame = false;
     if (r->overflow) return PP_ERR_OVERFLOW;
     r->buf[r->len] = '\0';
-    return pp_parse_body(r->buf, r->len, out);
+    return pp_parse_body_ex(r->buf, r->len, out, r->allow_no_checksum);
   }
   if (r->len >= PP_MAX_LINE) {
     r->overflow = true;

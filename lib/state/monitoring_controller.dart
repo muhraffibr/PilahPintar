@@ -12,6 +12,7 @@ import '../models/system_status.dart';
 import '../models/waste_bin.dart';
 import '../models/waste_category.dart';
 import '../models/waste_sorting.dart';
+import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 
 /// Kondisi keseluruhan aplikasi (PRD §13).
@@ -81,12 +82,21 @@ class MonitoringController extends ChangeNotifier {
   MonitoringController({
     required this.repository,
     required this.notificationService,
+    this.auth,
     DateTime Function()? clock,
   })  : _clock = clock ?? DateTime.now,
         _todayStart = startOfDay((clock ?? DateTime.now)());
 
   final TrashRepository repository;
   final NotificationService notificationService;
+
+  /// Login operator; `null` pada mode simulasi (tanpa login).
+  final AuthService? auth;
+
+  /// `false` saat foreground service (BackgroundMonitor) berjalan: service
+  /// itulah yang menampilkan push, sehingga aplikasi utama hanya menampilkan
+  /// snackbar dan tidak membuat notifikasi dobel.
+  bool pushNotifications = true;
   final DateTime Function() _clock;
 
   final List<StreamSubscription<dynamic>> _subs = [];
@@ -114,6 +124,8 @@ class MonitoringController extends ChangeNotifier {
   String? _commandError;
   Completer<bool>? _ackCompleter;
   Timer? _ackTimer;
+  DateTime? _commandSentAt;
+  String? _deviceFailReason;
 
   bool _deviceOnline = false;
   bool _deviceEverOnline = false;
@@ -243,6 +255,21 @@ class MonitoringController extends ChangeNotifier {
 
   void _onCommand(CommandRecord? record) {
     _latestCommand = record;
+    // Perangkat menolak perintah (status FAILED, mis. reason LOCAL_RESET):
+    // hentikan penantian tanpa menunggu batas waktu.
+    final completer = _ackCompleter;
+    final sentAt = _commandSentAt;
+    if (record == null ||
+        completer == null ||
+        completer.isCompleted ||
+        sentAt == null ||
+        record.command != _activeCommand ||
+        record.status != CommandStatus.failed ||
+        record.issuedAt.isBefore(sentAt.subtract(const Duration(seconds: 10)))) {
+      return;
+    }
+    _deviceFailReason = record.reason ?? '';
+    completer.complete(false);
   }
 
   void _onBackend(bool connected) {
@@ -382,7 +409,7 @@ class MonitoringController extends ChangeNotifier {
     );
     _persistNotification(notification);
     if (push && _settings.notificationEnabled) {
-      notificationService.show(notification);
+      if (pushNotifications) notificationService.show(notification);
       if (!_alerts.isClosed) _alerts.add(notification);
     }
   }
@@ -420,6 +447,11 @@ class MonitoringController extends ChangeNotifier {
     final bin = _bins[category];
     return bin == null ? null : _settings.levelFor(bin.capacityPercentage);
   }
+
+  List<WasteCategory> binCategoriesAt(BinLevel level) => [
+        for (final b in _bins.values)
+          if (_settings.levelFor(b.capacityPercentage) == level) b.category,
+      ];
 
   int countBinsAt(BinLevel level) =>
       _bins.values.where((b) => _settings.levelFor(b.capacityPercentage) == level).length;
@@ -502,6 +534,8 @@ class MonitoringController extends ChangeNotifier {
     _activeCommand = command;
     _commandPhase = CommandPhase.sending;
     _commandError = null;
+    _deviceFailReason = null;
+    _commandSentAt = _serverNow;
     _notify();
 
     try {
@@ -512,6 +546,10 @@ class MonitoringController extends ChangeNotifier {
       return _failCommand(
           'Server tidak merespons. Periksa koneksi internet ponsel.');
     } catch (e) {
+      if (isPermissionDenied(e)) {
+        return _failCommand('Akun ini bukan operator, jadi tidak boleh '
+            'mengirim perintah. Hubungi admin.');
+      }
       return _failCommand('Gagal mengirim perintah: $e');
     }
 
@@ -520,6 +558,8 @@ class MonitoringController extends ChangeNotifier {
 
     final acknowledged = await _awaitDeviceAck(command);
     if (!acknowledged) {
+      final reason = _deviceFailReason;
+      if (reason != null) return _failCommand(describeDeviceFailure(reason));
       return _failCommand('Perangkat belum menjalankan perintah '
           '${command.code}. Periksa koneksi alat lalu coba lagi.');
     }
@@ -541,6 +581,27 @@ class MonitoringController extends ChangeNotifier {
     _activeCommand = null;
     _notify();
     return CommandOutcome(false, message);
+  }
+
+  /// Teks untuk alasan penolakan dari perangkat (`commands/latest/reason`,
+  /// diteruskan ESP32 dari `$NAK,<cmd>,<alasan>` STM32).
+  static String describeDeviceFailure(String reason) => switch (reason) {
+        'LOCAL_RESET' => 'Reset tombol di mesin diperlukan. Setelah tombol '
+            'darurat atau gangguan arus, tekan tombol RESET di mesin dan pastikan '
+            'sabuk aman sebelum START dari aplikasi.',
+        'ESTOP' => 'Tombol darurat masih ditekan. Lepaskan tombol darurat, '
+            'tekan RESET di mesin, lalu coba lagi.',
+        'STM_OFFLINE' => 'Pengendali konveyor (STM32) tidak merespons.',
+        'EXPIRED' => 'Perintah kedaluwarsa sebelum diterima perangkat.',
+        _ => 'Perangkat menolak perintah${reason.isEmpty ? '' : ' ($reason)'}.',
+      };
+
+  /// `true` bila error berasal dari security rules Firebase.
+  static bool isPermissionDenied(Object e) {
+    final text = e.toString().toLowerCase();
+    return text.contains('permission-denied') ||
+        text.contains('permission_denied') ||
+        text.contains('permission denied');
   }
 
   void dismissCommandError() {
@@ -592,7 +653,15 @@ class MonitoringController extends ChangeNotifier {
     _settings = settings.sanitized();
     _evaluateBinAlerts();
     _notify();
-    await repository.updateSettings(_settings);
+    try {
+      await repository.updateSettings(_settings);
+    } catch (e) {
+      if (isPermissionDenied(e)) {
+        throw StateError('akun ini bukan operator, pengaturan hanya bisa '
+            'diubah oleh operator');
+      }
+      rethrow;
+    }
   }
 
   Future<List<WasteSorting>> fetchHistory(DateTime from, DateTime to) =>

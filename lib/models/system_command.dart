@@ -41,12 +41,16 @@ class CommandRecord {
     required this.issuedAt,
     required this.status,
     this.source = 'mobile_app',
+    this.reason,
   });
 
   final SystemCommand command;
   final DateTime issuedAt;
   final CommandStatus status;
   final String source;
+
+  /// Alasan penolakan dari perangkat bila [status] FAILED, mis. `LOCAL_RESET`.
+  final String? reason;
 
   static CommandRecord? tryFromMap(Map<String, dynamic>? map) {
     if (map == null) return null;
@@ -58,6 +62,7 @@ class CommandRecord {
       issuedAt: issuedAt,
       status: CommandStatus.parse(map['status']),
       source: asNonEmptyString(map['source']) ?? 'unknown',
+      reason: asNonEmptyString(map['reason']),
     );
   }
 
@@ -66,5 +71,6 @@ class CommandRecord {
         issuedAt: issuedAt,
         status: status ?? this.status,
         source: source,
+        reason: reason,
       );
 }

@@ -4,8 +4,11 @@ Aplikasi mobile (Flutter + Firebase) untuk memantau dan mengendalikan sistem
 pemilah sampah otomatis berbasis IoT di **SMA Negeri 1 Bandung**. Ini prototype
 akademik untuk proyek Teknik Komputer.
 
-Aplikasi **tidak punya login, signup, maupun akun pengguna**. Saat dibuka,
-aplikasi langsung masuk ke Dashboard.
+Pada **mode Firebase**, aplikasi meminta login operator (Email/Password,
+Firebase Authentication). Akun dibuat admin di Firebase Console; tidak ada
+pendaftaran dari aplikasi. Sesi tersimpan sampai operator menekan **Keluar**
+di Pengaturan. **Mode simulasi** (mock data) tidak memakai login dan langsung
+masuk ke Dashboard.
 
 ```
 ESP32 (sensor ultrasonik, IoT) ──► Firebase Realtime Database ──► Aplikasi
@@ -18,7 +21,7 @@ STM32F411CEU6 (konveyor) ◄── ESP32 ◄── commands/latest ◄── tom
 |---|---|
 | §5 Dashboard | Status sistem (ON/OFF, Connected/Disconnected, RUNNING/STOPPED), kapasitas 4 tempat sampah dengan status Normal/Hampir Penuh/Penuh, tombol START/STOP dengan dialog konfirmasi, statistik hari ini, donut chart dan bar chart, aktivitas terbaru |
 | §6 Riwayat | Filter Hari ini / 7 hari / 30 hari / Custom date, grafik volume per kategori, ringkasan total, daftar aktivitas. Ketuk tanggal untuk membuka **Detail Riwayat**, ketuk baris untuk detail satu kejadian |
-| §7 Pengaturan | Notifikasi on/off, Almost Full Threshold dan Full Threshold, info sistem, info aplikasi. Tidak ada menu login/logout/profil |
+| §7 Pengaturan | Notifikasi on/off, Almost Full Threshold dan Full Threshold, info sistem, info aplikasi. Mode Firebase: kartu Akun (email, peran operator/pemantau, tombol Keluar) |
 | §8 Notifikasi | Panel notifikasi dengan badge, tandai dibaca / tandai semua dibaca, push notification lokal + snackbar di dalam aplikasi |
 | §10 Real-time | Semua data berupa stream. Saat koneksi putus muncul banner `Offline — Last update: 12:43:21` dan nilai ditandai sebagai data terakhir |
 | §13 State | Loading, Online, Offline, System OFF, Warning, Full, Error |
@@ -117,8 +120,11 @@ Ringkasnya:
 
 1. Salin `firebase_config.example.json` menjadi `firebase_config.json`, lalu
    isi nilainya dari Firebase Console. File ini tidak ikut ter-commit.
-2. Opsional: impor `firebase/seed_data.json` lewat Realtime Database →
-   **⋮ → Import JSON** untuk mencoba tanpa ESP32.
+2. Buat akun operator di **Authentication → Users**, lalu tambahkan
+   `operators/<UID>: true` di Realtime Database (detail di firmware/README.md).
+   Opsional: impor `firebase/seed_data.json` lewat Realtime Database →
+   **⋮ → Import JSON** untuk mencoba tanpa ESP32 (ganti dulu placeholder UID
+   di node `operators` dan `devices`).
 3. Jalankan atau build dengan konfigurasi tersebut:
 
    ```bash
@@ -198,11 +204,30 @@ Notifikasi tidak muncul berulang kali karena noise sensor: setelah peringatan
 muncul, kapasitas harus turun 3% di bawah threshold sebelum peringatan yang
 sama bisa muncul lagi.
 
-**Batasan prototype.** Push notification ditampilkan oleh aplikasi
-(`flutter_local_notifications`), sehingga hanya muncul selama aplikasi masih
-berjalan, termasuk di background. Push ketika aplikasi ditutup penuh
-memerlukan Firebase Cloud Messaging + Cloud Functions yang memantau node
-`bins` dan `system_status`. Ini langkah pengembangan berikutnya.
+**Saat aplikasi ditutup (mode Firebase, Android).** Setelah login, aplikasi
+menjalankan *foreground service* (`lib/services/background_monitor.dart`,
+plugin `flutter_foreground_task`). Service ini menjalankan isolate Dart sendiri
+yang berisi `MonitoringController` dengan listener Firebase, sehingga
+peringatan hampir penuh, penuh, koneksi terputus, dan berhenti tidak normal
+tetap muncul walaupun aplikasi diusap dari daftar aplikasi terbaru. Tidak perlu
+FCM atau Cloud Functions, jadi tetap di paket gratis Spark.
+
+- Ada notifikasi tetap "PilahPintar memantau tempat sampah" yang berisi
+  ringkasan kondisi (mis. "Penuh: Logam"). Ketuk untuk membuka aplikasi.
+- Saat service berjalan, aplikasi utama tidak menampilkan push sendiri (hanya
+  snackbar), dan ID notifikasi Android dihitung dari ID peringatan, sehingga
+  tidak ada notifikasi dobel.
+- Service ikut menyala setelah ponsel dinyalakan ulang atau aplikasi
+  diperbarui, selama sesi login masih ada. Saat **Keluar**, service berhenti.
+- Bisa dimatikan di Pengaturan → Pemantauan Latar Belakang.
+- Pertama kali, aplikasi meminta izin "abaikan optimasi baterai". Di
+  Xiaomi/Oppo/Vivo, aktifkan juga *autostart* dan "tanpa batasan baterai" untuk
+  PilahPintar agar service tidak dimatikan sistem.
+- Konsekuensi: koneksi ke Firebase terus terbuka, jadi baterai lebih boros
+  dibanding aplikasi biasa.
+
+Mode simulasi tidak memakai service; notifikasinya hanya muncul selama
+aplikasi berjalan.
 
 Catatan Android: `flutter_local_notifications` memerlukan *core library
 desugaring*. Konfigurasinya sudah ditambahkan di
@@ -220,20 +245,32 @@ Cakupan tes:
 - Agregasi riwayat (per jam/per hari).
 - Controller: notifikasi threshold, alur STOP → OFF/STOPPED, deteksi offline,
   dan gangguan konveyor.
-- Widget: app langsung membuka Dashboard tanpa login, dialog konfirmasi
-  STOP, dan navigasi.
+- Widget: mode simulasi langsung membuka Dashboard tanpa login, dialog
+  konfirmasi STOP, dan navigasi.
+- START ditolak perangkat (`reason` `LOCAL_RESET`) menampilkan "Reset tombol di
+  mesin diperlukan".
 - Kontrak firmware: JSON persis seperti yang ditulis ESP32 terbaca benar
   (`test/firmware_contract_test.dart`).
 
 Protokol UART firmware diuji terpisah dengan gcc, lihat
 [firmware/README.md](firmware/README.md#cara-parsing-kode-yang-sama-di-kedua-board).
 
-## Keamanan (catatan untuk tahap lanjut)
+## Keamanan
 
-Karena aplikasi tidak memakai login, rules mengizinkan siapa pun yang
-mengetahui URL database untuk membaca data dan menulis `commands`,
-`settings`, serta `notifications` (dengan validasi format). Node yang ditulis
-perangkat (`system_status`, `bins`, `sortings`) mensyaratkan `auth != null`,
-jadi ESP32 perlu masuk menggunakan akun perangkat (Email/Password) di Firebase
-Auth. Untuk penggunaan di luar prototype, aktifkan **Firebase App Check** agar
-hanya aplikasi resmi yang dapat mengirim perintah START/STOP.
+`firebase/database.rules.json`:
+
+- Semua baca mensyaratkan login (`auth != null`).
+- Hanya **operator**, yaitu akun yang UID-nya ada di `/operators/<uid>`, yang
+  boleh menulis `commands/latest`, `settings`, dan `notifications`.
+- Hanya **akun perangkat** (`/devices/<uid>`) yang boleh menulis
+  `system_status`, `bins`, dan `sortings`. Di `commands/latest`, perangkat
+  hanya boleh mengubah `status` (bukan ke `PENDING`) dan `reason`, sehingga
+  tidak bisa membuat perintah sendiri.
+- `/operators` dan `/devices` tidak bisa ditulis lewat aplikasi atau
+  perangkat; hanya diubah dari Firebase Console.
+- Semua aturan `.validate` tetap berlaku.
+
+Tabel lengkap dan langkah pengujian di Rules Playground ada di
+[firmware/README.md](firmware/README.md#siapa-boleh-apa-databaserulesjson).
+Untuk penggunaan di luar prototype, tambahkan **Firebase App Check** dan
+matikan pendaftaran akun mandiri di Authentication.

@@ -4,14 +4,17 @@
  * Murni C tanpa Arduino, sehingga bisa diuji di PC:
  *   gcc -std=c99 -Wall -Wextra -o test_sort_rules firmware/test/test_sort_rules.c firmware/esp32/PilahPintar_ESP32/sort_rules.c
  *
+ * Sensor (rancangan CD 3): Sharp IR GP2Y0A21 (tinggi), proximity induktif,
+ * proximity kapasitif, capacitive soil moisture, raindrop, LDR + laser pointer.
+ *
  * Urutan aturan (aturan pertama yang cocok dipakai):
  *   1. Induktif aktif                                     -> logam
- *   2. Soil moisture basah                                -> organik
- *   3. Tinggi >= bottle_min_height_mm:
- *        pantulan >= styrofoam_min_signal (jika aktif)    -> anorganik (styrofoam)
+ *   2. Soil moisture basah atau raindrop basah            -> organik
+ *   3. Tinggi >= bottle_min_height_mm (Sharp IR):
+ *        LDR terang & styrofoam_by_bright                 -> anorganik (styrofoam)
  *        selain itu                                       -> recyclable (botol)
  *   4. Kapasitif aktif (jika capacitive_means_organic)    -> organik
- *   5. Pendek & pantulan >= paper_min_signal (jika aktif) -> recyclable (kertas)
+ *   5. Pendek & LDR terang & paper_by_bright              -> recyclable (kertas)
  *   6. Selain itu                                         -> anorganik (residu)
  *
  * Sampah yang tidak terbaca sensor apa pun tidak pernah sampai ke sini: ia
@@ -35,21 +38,21 @@ typedef enum {
 
 /* Ciri satu item, dikumpulkan selama item melewati zona sensor. */
 typedef struct {
-  bool inductive;     /* sensor induktif pernah aktif */
-  bool capacitive;    /* sensor kapasitif pernah aktif */
-  int soil_min_raw;   /* ADC soil moisture terendah (makin kecil makin basah); -1 = tidak ada */
-  int height_mm;      /* tinggi maksimum terukur VL53L1X; 0 = tidak terlihat */
-  float signal_mcps;  /* kekuatan pantulan maksimum VL53L1X (MCPS) */
+  bool inductive;    /* sensor induktif pernah aktif */
+  bool capacitive;   /* sensor kapasitif pernah aktif */
+  int soil_min_raw;  /* ADC soil moisture terendah (makin kecil makin basah); -1 = tidak ada */
+  bool raindrop;     /* sensor raindrop pernah basah */
+  int height_mm;     /* tinggi maksimum terukur Sharp IR; 0 = tidak terlihat */
+  bool bright;       /* LDR pernah menerima pantulan laser yang kuat */
 } sr_features_t;
 
-/* Ambang batas. Nilai 0 pada *_min_signal_mcps mematikan aturan tersebut. */
 typedef struct {
   int soil_wet_raw;
   bool capacitive_means_organic;
   int bottle_min_height_mm;
-  float styrofoam_min_signal_mcps;
+  bool styrofoam_by_bright; /* aturan styrofoam (butuh LDR terkalibrasi) */
   int paper_max_height_mm;
-  float paper_min_signal_mcps;
+  bool paper_by_bright;     /* aturan kertas (butuh LDR terkalibrasi) */
 } sr_config_t;
 
 typedef struct {

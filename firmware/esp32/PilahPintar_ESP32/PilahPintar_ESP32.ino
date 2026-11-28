@@ -3,8 +3,9 @@
  *  PilahPintar — Firmware ESP32 (gateway IoT)
  * ============================================================================
  *  Tugas ESP32:
- *   1. Memilah sampah di zona sensor konveyor bawah (sorter.cpp):
- *      VL53L1X, induktif, kapasitif, soil moisture -> 3 servo pendorong
+ *   1. Memilah sampah di zona sensor konveyor bawah (sorter.cpp, task FreeRTOS
+ *      di core 1): Sharp IR, LDR + laser, induktif, kapasitif, soil moisture
+ *      -> 3 servo pendorong (bergiliran)
  *   2. Membaca kapasitas 4 tempat sampah (ultrasonik)      -> bins/<kategori>
  *   3. Melaporkan setiap item yang selesai dipilah          -> sortings/<pushId>
  *   4. Mengirim heartbeat status sistem tiap 5 detik        -> system_status
@@ -12,7 +13,7 @@
  *      dan meneruskannya ke STM32 lewat UART.
  *
  *  Board   : ESP32 Dev Module (ESP32-DevKitC V4 / WROOM-32U)
- *  Library : ArduinoJson 7.x (Benoit Blanchon), VL53L1X (Pololu),
+ *  Library : ArduinoJson 7.x (Benoit Blanchon),
  *            ESP32Servo (Kevin Harrington) — semua dari Library Manager
  *  Setup   : salin secrets.example.h -> secrets.h, isi Wi-Fi & Firebase.
  *
@@ -23,7 +24,8 @@
  *
  *  Protokol UART ke STM32 (detail: pp_protocol.h & firmware/README.md):
  *    ESP32 -> STM32 : $CMD,START   $CMD,STOP   $PING
- *    STM32 -> ESP32 : $ACK,<cmd>   $NAK,<cmd>,<alasan>
+ *    STM32 -> ESP32 : $ACK,<cmd>   $NAK,<cmd>,<alasan>  (alasan diteruskan ke
+ *                                                         commands/latest/reason)
  *                     $STS,<RUN|STOP>,<kode_gangguan>     (tiap 1 detik)
  *                     $SRT,<kategori>,<OK|FAIL>[,<item>]  (opsional)
  * ============================================================================
@@ -53,7 +55,7 @@ pp_reader_t usbReader;
 #if DEBUG_INJECT_FROM_USB
 // "STM32 virtual": ketik $SIM,ON di Serial Monitor agar ESP32 membalas
 // perintah seolah STM32 tersambung (uji tanpa STM32).
-bool virtualStm = false;
+bool virtualStm = NETWORK_TEST_MODE;  // mode uji jaringan: langsung aktif
 bool virtualRunning = false;
 uint32_t lastVirtualStsMs = 0;
 #endif
@@ -75,6 +77,7 @@ struct PendingCommand {
   bool active = false;
   char code[8] = "";
   uint32_t sentMs = 0;
+  uint64_t issuedAt = 0;  // waktu server saat aplikasi menulis perintah
 } pending;
 uint64_t lastHandledIssuedAt = 0;
 
@@ -137,6 +140,7 @@ const char *faultText() {
     case 2: return "Konveyor macet";
     case 3: return "Tombol darurat ditekan";
     case 4: return "STM32 kehilangan sinyal dari ESP32";
+    case 5: return "Reset tombol di mesin diperlukan (tombol darurat sudah dilepas)";
     default: return "Gangguan konveyor";
   }
 }
@@ -145,7 +149,8 @@ const char *faultText() {
 // Proses satu baris seolah datang dari STM32, mis. "STS,RUN,0".
 void injectFromStm(const char *body) {
   pp_msg_t msg;
-  if (pp_parse_body(body, strlen(body), &msg) == PP_MSG) handleStmMessage(msg);
+  // Pesan internal (STM32 virtual), bukan dari kabel UART: boleh tanpa checksum.
+  if (pp_parse_body_ex(body, strlen(body), &msg, true) == PP_MSG) handleStmMessage(msg);
 }
 
 void updateVirtualStm() {
@@ -192,6 +197,9 @@ void laporkanPemilahan(const char *kategori, bool berhasil, const char *item = "
     return;
   }
   if (queueCount == kQueueSize) {  // penuh: buang yang paling lama
+#if NET_LOG
+    Serial.printf("SRTDROP,%llu,%s\n", epochMs(), sortQueue[queueHead].item);
+#endif
     queueHead = (queueHead + 1) % kQueueSize;
     queueCount--;
   }
@@ -203,20 +211,28 @@ void laporkanPemilahan(const char *kategori, bool berhasil, const char *item = "
   queueCount++;
   Serial.printf("[SORT] %s %s %s (antrean %u)\n", kategori, berhasil ? "OK" : "FAIL",
                 e.item, queueCount);
+#if NET_LOG
+  Serial.printf("SRTQ,%llu,%s,%u\n", e.timestampMs, e.item, queueCount);
+#endif
 }
 
 // ---------------------------------------------------------------------------
 // Pesan dari STM32
 // ---------------------------------------------------------------------------
-void patchCommandStatus(const char *status) {
-  if (WiFi.status() != WL_CONNECTED || !firebase.ready()) return;
+// reason: alasan kegagalan untuk aplikasi (mis. "LOCAL_RESET"), nullptr = tidak ada.
+// Rules hanya mengizinkan akun perangkat menulis field "status" dan "reason".
+bool patchCommandStatus(const char *status, const char *reason = nullptr) {
+  if (WiFi.status() != WL_CONNECTED || !firebase.ready()) return false;
   JsonDocument doc;
   doc["status"] = status;
+  if (reason && reason[0]) doc["reason"] = reason;
   String body;
   serializeJson(doc, body);
   if (!firebase.patch("commands/latest", body)) {
     Serial.printf("[FB] gagal update status perintah: %s\n", firebase.lastError().c_str());
+    return false;
   }
+  return true;
 }
 
 void handleStmMessage(const pp_msg_t &m) {
@@ -244,7 +260,17 @@ void handleStmMessage(const pp_msg_t &m) {
         if (start) dev.faultCode = 0;
       }
       heartbeatDue = true;
-      patchCommandStatus(ack ? "DONE" : "FAILED");
+      // NAK: teruskan alasan STM32 (ESTOP, LOCAL_RESET, ...) ke aplikasi.
+      const bool written = patchCommandStatus(ack ? "DONE" : "FAILED",
+                                              ack ? nullptr : pp_field(&m, 1));
+#if NET_LOG
+      // CMDDONE,command,issued_at,epoch_ms,completion_ms,status,written
+      const uint64_t doneAt = epochMs();
+      Serial.printf("CMDDONE,%s,%llu,%llu,%lld,%s,%d\n", cmd, pending.issuedAt, doneAt,
+                    (long long)(doneAt - pending.issuedAt), ack ? "DONE" : "FAILED", written ? 1 : 0);
+#else
+      (void)written;
+#endif
     }
   } else if (pp_is(&m, "SRT")) {
     laporkanPemilahan(pp_field(&m, 0), strcmp(pp_field(&m, 1), "OK") == 0,
@@ -296,7 +322,7 @@ void checkStmLink() {
   if (pending.active && millis() - pending.sentMs > COMMAND_ACK_TIMEOUT_MS) {
     pending.active = false;
     Serial.printf("[STM] tidak ada balasan untuk %s\n", pending.code);
-    patchCommandStatus("FAILED");
+    patchCommandStatus("FAILED", "NO_REPLY");
   }
   if (millis() - lastPingMs >= STM_PING_INTERVAL_MS) {
     lastPingMs = millis();
@@ -345,6 +371,12 @@ void flushSortQueue() {
       lastSortAttemptMs = millis();  // coba lagi 2 dtk kemudian
       return;
     }
+#if NET_LOG
+    // SRTOK,epoch_ms,item,delay_ms (dari event dibuat sampai tersimpan di Firebase)
+    const uint64_t savedAt = epochMs();
+    Serial.printf("SRTOK,%llu,%s,%lld\n", savedAt, e.item,
+                  e.timestampMs ? (long long)(savedAt - e.timestampMs) : -1LL);
+#endif
     queueHead = (queueHead + 1) % kQueueSize;
     queueCount--;
     sent++;
@@ -403,25 +435,31 @@ void handleCommandJson(const String &body) {
   const uint64_t now = epochMs();
   if (now != 0 && now > issuedAt + COMMAND_MAX_AGE_MS) {
     Serial.printf("[CMD] %s diabaikan (kedaluwarsa)\n", command);
-    patchCommandStatus("FAILED");
+    patchCommandStatus("FAILED", "EXPIRED");
     return;
   }
   if (strcmp(command, "START") != 0 && strcmp(command, "STOP") != 0) {
-    patchCommandStatus("FAILED");
+    patchCommandStatus("FAILED", "UNKNOWN");
     return;
   }
   if (!dev.stmOnline) {
     Serial.printf("[CMD] %s gagal: STM32 tidak terhubung\n", command);
-    patchCommandStatus("FAILED");
+    patchCommandStatus("FAILED", "STM_OFFLINE");
     return;
   }
 
   Serial.printf("[CMD] %s dari aplikasi\n", command);
+#if NET_LOG
+  // CMD,command,issued_at,epoch_ms,delivery_ms (issued_at = waktu server Firebase)
+  Serial.printf("CMD,%s,%llu,%llu,%lld\n", command, issuedAt, now,
+                now ? (long long)(now - issuedAt) : -1LL);
+#endif
   // "ACK" ditulis dulu; balasan STM32 kemudian menjadi "DONE"/"FAILED".
   patchCommandStatus("ACK");
   strlcpy(pending.code, command, sizeof pending.code);
   pending.active = true;
   pending.sentMs = millis();
+  pending.issuedAt = issuedAt;
   sendToStm("CMD", command);
 }
 
@@ -447,6 +485,16 @@ void pollSettings() {
 }
 
 void maintainWifi() {
+#if NET_LOG
+  static bool wasConnected = false;
+  const bool connectedNow = WiFi.status() == WL_CONNECTED;
+  if (connectedNow != wasConnected) {
+    wasConnected = connectedNow;
+    // WIFI,UP|DOWN,epoch_ms,millis,rssi_dbm
+    Serial.printf("WIFI,%s,%llu,%lu,%d\n", connectedNow ? "UP" : "DOWN", epochMs(),
+                  (unsigned long)millis(), connectedNow ? (int)WiFi.RSSI() : 0);
+  }
+#endif
   if (WiFi.status() == WL_CONNECTED) return;
   if (millis() - lastWifiAttemptMs < 10000 && lastWifiAttemptMs != 0) return;
   lastWifiAttemptMs = millis();
@@ -469,9 +517,48 @@ void printStatus() {
                   BinSensors::lastDistanceCm(i), BinSensors::percent(i),
                   BinSensors::valid(i) ? "" : "  (sensor belum terbaca)");
   }
-  Serial.printf("       pemilah    vl53l1x=%s item_di_sabuk=%u\n",
-                Sorter::tofOk() ? "ok" : "GAGAL", Sorter::itemsInTransit());
+#if NETWORK_TEST_MODE
+  Serial.println("       pemilah    dimatikan (mode uji jaringan, data kapasitas disimulasikan)");
+#else
+  if (!Sorter::sensorsActive()) {
+    Serial.println("       pemilah    sensor mati (konveyor berhenti, tunggu START)");
+  } else {
+    Serial.printf("       pemilah    sharp_ir=%s item_di_sabuk=%u\n",
+                  Sorter::distanceSensorOk() ? "ok" : "GAGAL", Sorter::itemsInTransit());
+  }
+#endif
 }
+
+#if !NETWORK_TEST_MODE && SORTER_JITTER_LOG
+// Bukti bahwa jaringan tidak mengganggu waktu pemilah:
+// JIT,epoch_ms,millis,ticks,max_period_us,max_late_us,max_exec_us,late_over_1ms
+void printSorterTiming() {
+  static uint32_t last = 0;
+  if (millis() - last < SORTER_JITTER_LOG_MS) return;
+  last = millis();
+  Sorter::TimingStats t;
+  if (!Sorter::takeTimingStats(t)) return;
+  Serial.printf("JIT,%llu,%lu,%lu,%lu,%ld,%lu,%lu\n", epochMs(), (unsigned long)millis(),
+                (unsigned long)t.ticks, (unsigned long)t.maxPeriodUs, (long)t.maxLateUs,
+                (unsigned long)t.maxExecUs, (unsigned long)t.lateOver1ms);
+}
+#endif
+
+#if NETWORK_TEST_MODE
+// Event pemilahan buatan "TEST #n" selama konveyor (virtual) berjalan.
+void generateTestEvent() {
+  static uint32_t lastMs = 0;
+  static uint32_t seq = 0;
+  if (!dev.conveyorRunning || millis() - lastMs < TEST_EVENT_INTERVAL_MS) return;
+  lastMs = millis();
+  static const char *const kCategories[] = {KATEGORI_ORGANIK, KATEGORI_RECYCLABLE,
+                                            KATEGORI_LOGAM, KATEGORI_ANORGANIK};
+  char item[24];
+  seq++;
+  snprintf(item, sizeof item, "TEST #%lu", (unsigned long)seq);
+  laporkanPemilahan(kCategories[seq % 4], true, item);
+}
+#endif
 
 // ---------------------------------------------------------------------------
 void setup() {
@@ -481,15 +568,20 @@ void setup() {
 
   StmSerial.setRxBufferSize(1024);  // HTTPS bisa memblok ±0,5 dtk
   StmSerial.begin(STM_UART_BAUD, SERIAL_8N1, STM_UART_RX_PIN, STM_UART_TX_PIN);
-  pp_reader_init(&stmReader);
+  pp_reader_init(&stmReader);  // UART STM32: checksum wajib
   pp_reader_init(&usbReader);
+  usbReader.allow_no_checksum = true;  // konsol USB: boleh diketik manual tanpa *CS
   Serial.println("Perintah: $CAL,ON kalibrasi | $TES,0..2 uji pendorong");
 #if DEBUG_INJECT_FROM_USB
   Serial.println("Mode uji: $SIM,ON = STM32 virtual | $SRT,logam,OK,Kaleng = laporan pemilahan");
 #endif
 
   BinSensors::begin();
+#if NETWORK_TEST_MODE
+  Serial.println("MODE UJI JARINGAN: pemilah mati, STM32 virtual aktif, log CSV aktif");
+#else
   Sorter::begin();
+#endif
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -514,8 +606,14 @@ void loop() {
     laporkanPemilahan(report.category, report.ok, report.item);
   }
   BinSensors::update();
+#if NETWORK_TEST_MODE
+  generateTestEvent();
+#endif
   checkStmLink();
   printStatus();
+#if !NETWORK_TEST_MODE && SORTER_JITTER_LOG
+  printSorterTiming();
+#endif
 
   // 2. Jaringan
   maintainWifi();

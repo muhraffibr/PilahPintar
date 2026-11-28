@@ -37,13 +37,31 @@
 // Tombol darurat: kontak NC kedua tombol E-stop antara PB12 dan GND.
 //   Tertutup = LOW (aman); ditekan atau kabel putus = HIGH (berhenti).
 //   Kontak NC pertama memutus +12 V aktuator secara langsung (lihat README).
-// Setelah tombol dilepas, konveyor tetap berhenti sampai ada START baru
-// (reset manual). Selama tombol belum terpasang, START ditolak
+// Selama tombol ditekan atau belum terpasang, START ditolak
 // ($NAK,START,ESTOP); untuk uji di meja, sambungkan PB12 ke GND.
 // ---------------------------------------------------------------------------
 #define USE_ESTOP 1
 #define PIN_ESTOP PB12
 #define ESTOP_DEBOUNCE_MS 20  // abaikan gangguan listrik sesaat pada kabel tombol
+
+// ---------------------------------------------------------------------------
+// Reset lokal setelah tombol darurat / arus berlebih.
+//   1 = gangguan 3 (tombol darurat) dan 1 (arus berlebih) DIKUNCI. Setelah
+//       tombol darurat dilepas, START dari aplikasi tetap ditolak
+//       ($NAK,START,LOCAL_RESET) sampai operator menekan tombol RESET di mesin.
+//       Ini mencegah konveyor dinyalakan dari jauh saat tangan seseorang
+//       masih di sabuk. Tombol RESET hanya menghapus gangguan, TIDAK
+//       menjalankan konveyor; START tetap dari aplikasi.
+//   0 = perilaku lama: START dari aplikasi sekaligus mereset gangguan.
+// Tombol RESET: push button NO antara PIN_LOCAL_RESET dan GND (INPUT_PULLUP).
+//   PA0 = tombol "KEY" bawaan Black Pill, jadi bisa diuji tanpa kabel
+//   tambahan; tombol panel di mesin disambung paralel ke PA0 dan GND.
+// Gangguan 4 (link ESP32 putus) tidak dikunci: START dari aplikasi tetap
+// boleh setelah link pulih.
+// ---------------------------------------------------------------------------
+#define REQUIRE_LOCAL_RESET 1
+#define PIN_LOCAL_RESET PA0
+#define LOCAL_RESET_HOLD_MS 50  // tombol harus ditekan stabil selama ini
 
 // ---------------------------------------------------------------------------
 // Sensor arus motor (opsional), mis. ACS712 di pin analog.

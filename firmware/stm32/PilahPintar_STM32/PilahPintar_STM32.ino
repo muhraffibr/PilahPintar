@@ -5,7 +5,7 @@
  *  Board : STM32F411CEU6 "Black Pill"
  *          Arduino IDE -> Board "Generic STM32F4 series",
  *          Board part number "BlackPill F411CE"
- *  Core  : STM32duino (STMicroelectronics) 2.x
+ *  Core  : STM32duino (STMicroelectronics) 2.x atau 3.x
  *
  *  Tugas STM32:
  *   - Menjalankan / menghentikan 2 motor konveyor (atas & bawah) sesuai
@@ -17,9 +17,12 @@
  *    ESP32 -> STM32 : $CMD,START   $CMD,STOP   $PING
  *    STM32 -> ESP32 : $ACK,<cmd>   $NAK,<cmd>,<alasan>
  *                     $STS,<RUN|STOP>,<kode_gangguan>
+ *  Alasan NAK     : ESTOP (tombol darurat masih ditekan), LOCAL_RESET (perlu
+ *                   tombol RESET di mesin), UNKNOWN
  *
  *  Kode gangguan: 0 normal · 1 arus berlebih · 2 macet · 3 tombol darurat
  *                 4 link ESP32 putus
+ *                 5 tombol darurat sudah dilepas, menunggu RESET lokal
  * ============================================================================
  */
 #include "config.h"
@@ -31,9 +34,15 @@ enum : uint8_t {
   FAULT_JAM = 2,
   FAULT_ESTOP = 3,
   FAULT_LINK = 4,
+  FAULT_RESET_REQUIRED = 5,  // e-stop dilepas, gangguan masih terkunci
 };
 
+// STM32duino 3.x mengganti nama kelas HardwareSerial menjadi Uart.
+#if defined(STM32_CORE_VERSION_MAJOR) && (STM32_CORE_VERSION_MAJOR >= 3)
+Uart EspSerial(PIN_ESP_RX, PIN_ESP_TX);
+#else
 HardwareSerial EspSerial(PIN_ESP_RX, PIN_ESP_TX);
+#endif
 pp_reader_t reader;
 
 struct Motor {
@@ -55,6 +64,8 @@ uint32_t lastRxMs = 0;
 uint32_t lastStatusMs = 0;
 uint32_t overCurrentSinceMs = 0;
 uint32_t estopHighSinceMs = 0;
+uint32_t resetLowSinceMs = 0;
+bool resetHandled = false;  // satu tekanan = satu reset
 
 // ---------------------------------------------------------------------------
 // Kirim ke ESP32
@@ -145,13 +156,49 @@ bool overCurrent() {
 #endif
 }
 
+// Gangguan yang hanya boleh dihapus dengan tombol RESET di mesin.
+bool faultLatched() {
+#if REQUIRE_LOCAL_RESET
+  return fault == FAULT_ESTOP || fault == FAULT_OVERCURRENT ||
+         fault == FAULT_RESET_REQUIRED;
+#else
+  return false;
+#endif
+}
+
+// true sekali untuk setiap tekanan tombol RESET yang stabil
+// LOCAL_RESET_HOLD_MS (debounce).
+bool localResetPressed() {
+#if REQUIRE_LOCAL_RESET
+  if (digitalRead(PIN_LOCAL_RESET) == HIGH) {
+    resetLowSinceMs = 0;
+    resetHandled = false;
+    return false;
+  }
+  if (resetLowSinceMs == 0) resetLowSinceMs = millis() | 1;
+  if (resetHandled || millis() - resetLowSinceMs < LOCAL_RESET_HOLD_MS) return false;
+  resetHandled = true;
+  return true;
+#else
+  return false;
+#endif
+}
+
 void checkSafety() {
   // Tombol darurat dilaporkan juga saat konveyor diam, supaya aplikasi tahu.
-  // Gangguan tetap tercatat setelah tombol dilepas sampai ada START baru.
   if (estopActive()) {
     if (running || fault != FAULT_ESTOP) stopWithFault(FAULT_ESTOP);
     return;
   }
+#if REQUIRE_LOCAL_RESET
+  // Tombol darurat sudah dilepas, tetapi gangguan tetap terkunci sampai
+  // tombol RESET lokal ditekan.
+  if (fault == FAULT_ESTOP) stopWithFault(FAULT_RESET_REQUIRED);
+  if (localResetPressed() && faultLatched()) {
+    fault = FAULT_NONE;  // hanya menghapus gangguan, konveyor tetap diam
+    sendStatus();
+  }
+#endif
   if (!running) return;
   if (overCurrent()) {
     stopWithFault(FAULT_OVERCURRENT);
@@ -174,8 +221,13 @@ void handleMessage(const pp_msg_t &m) {
       if (estopActive()) {
         fault = FAULT_ESTOP;
         sendFrame("NAK", "START", "ESTOP");
+      } else if (faultLatched()) {
+        // Tombol darurat / arus berlebih: START dari jauh ditolak sampai
+        // tombol RESET di mesin ditekan.
+        sendFrame("NAK", "START", "LOCAL_RESET");
       } else {
-        fault = FAULT_NONE;  // START sekaligus mereset gangguan
+        // Gangguan yang tidak dikunci (mis. link putus) direset oleh START.
+        fault = FAULT_NONE;
         running = true;
         motorsStartRamp();
         sendFrame("ACK", "START");
@@ -223,6 +275,9 @@ void setup() {
   }
 #if USE_ESTOP
   pinMode(PIN_ESTOP, INPUT_PULLUP);
+#endif
+#if REQUIRE_LOCAL_RESET
+  pinMode(PIN_LOCAL_RESET, INPUT_PULLUP);
 #endif
 #if USE_CURRENT_SENSE
   analogReadResolution(12);

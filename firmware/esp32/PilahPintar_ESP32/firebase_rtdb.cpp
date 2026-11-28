@@ -3,6 +3,31 @@
 #include "firebase_rtdb.h"
 
 #include <ArduinoJson.h>
+#include <WiFi.h>
+#include <sys/time.h>
+
+#if NET_LOG
+namespace {
+
+uint64_t nowEpochMs() {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  if (tv.tv_sec < 1700000000) return 0;  // jam belum tersinkron NTP
+  return (uint64_t)tv.tv_sec * 1000ULL + tv.tv_usec / 1000;
+}
+
+// Nama node dari URL (tanpa token), mis. "commands/latest" atau "auth/signin".
+String nodeOf(const String &url, const String &databaseUrl) {
+  if (url.startsWith(databaseUrl)) {
+    const int start = databaseUrl.length() + 1;
+    const int end = url.indexOf(".json");
+    return url.substring(start, end > start ? end : url.length());
+  }
+  return url.indexOf("signInWithPassword") >= 0 ? "auth/signin" : "auth/refresh";
+}
+
+}  // namespace
+#endif
 
 void FirebaseRtdb::begin(const char *apiKey, const char *databaseUrl,
                          const char *email, const char *password) {
@@ -35,6 +60,10 @@ void FirebaseRtdb::storeToken(const String &idToken, const String &refreshToken,
 bool FirebaseRtdb::request(const char *method, const String &url,
                            const String *body, String *response,
                            const char *contentType) {
+#if NET_LOG
+  const bool reused = client_.connected();  // koneksi TLS lama dipakai ulang
+  const uint32_t startMs = millis();
+#endif
   if (!http_.begin(client_, url)) {
     lastError_ = "HTTP begin gagal";
     return false;
@@ -55,6 +84,12 @@ bool FirebaseRtdb::request(const char *method, const String &url,
   String payload = code > 0 ? http_.getString() : String();
   http_.end();
   if (response) *response = payload;
+#if NET_LOG
+  // NET,epoch_ms,method,node,http_code,duration_ms,rssi_dbm,reused
+  Serial.printf("NET,%llu,%s,%s,%d,%lu,%d,%d\n", nowEpochMs(), method,
+                nodeOf(url, databaseUrl_).c_str(), code,
+                (unsigned long)(millis() - startMs), (int)WiFi.RSSI(), reused ? 1 : 0);
+#endif
 
   if (code >= 200 && code < 300) {
     lastError_ = "";

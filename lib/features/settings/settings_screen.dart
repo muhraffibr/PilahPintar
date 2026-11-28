@@ -5,20 +5,26 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/theme_mode_controller.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/mock/mock_trash_repository.dart';
 import '../../models/app_settings.dart';
+import '../../services/auth_service.dart';
+import '../../services/background_monitor.dart';
 import '../../state/monitoring_controller.dart';
 import '../../widgets/common.dart';
 
 /// Pengaturan: notifikasi & threshold, info sistem, info aplikasi (PRD §7).
-/// Tidak ada login/logout/profil — sesuai PRD.
+/// Mode Firebase menampilkan kartu akun (email, peran, tombol Keluar);
+/// mode simulasi tidak memakai login.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final repo = context.read<MonitoringController>().repository;
+    final controller = context.read<MonitoringController>();
+    final repo = controller.repository;
+    final auth = controller.auth;
     return Scaffold(
       appBar: AppBar(titleSpacing: 20, title: const Text('Pengaturan')),
       body: ListView(
@@ -33,6 +39,8 @@ class SettingsScreen extends StatelessWidget {
                   subtitle: 'Berlaku untuk semua perangkat yang memakai aplikasi',
                 ),
                 const _NotificationSettingsCard(),
+                const SectionHeader(title: 'Tampilan'),
+                const _ThemeCard(),
                 const SectionHeader(title: 'System Settings'),
                 const _SystemInfoCard(),
                 if (repo is MockTrashRepository) ...[
@@ -41,6 +49,17 @@ class SettingsScreen extends StatelessWidget {
                     subtitle: 'Hanya tampil saat memakai mock data — untuk demo',
                   ),
                   _SimulationCard(repo: repo),
+                ],
+                if (auth != null && BackgroundMonitor.isSupported) ...[
+                  const SectionHeader(
+                    title: 'Pemantauan Latar Belakang',
+                    subtitle: 'Peringatan tetap datang saat aplikasi ditutup',
+                  ),
+                  const _BackgroundMonitorCard(),
+                ],
+                if (auth != null) ...[
+                  const SectionHeader(title: 'Akun'),
+                  _AccountCard(auth: auth),
                 ],
                 const SectionHeader(title: 'Application Information'),
                 const _AppInfoCard(),
@@ -397,6 +416,161 @@ class _SimulationCardState extends State<_SimulationCard> {
             style: theme.textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.auth});
+
+  final AuthService auth;
+
+  Future<void> _signOut(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Keluar dari akun?'),
+        content: const Text(
+            'Pemantauan berhenti di ponsel ini sampai Anda masuk kembali.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Keluar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    // Hentikan service dulu: tanpa login, rules menolak semua baca.
+    await BackgroundMonitor.stop();
+    await auth.signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InfoRow(
+            icon: Icons.person_outline_rounded,
+            label: 'Masuk sebagai',
+            value: auth.email ?? '-',
+          ),
+          FutureBuilder<bool>(
+            future: auth.isOperator(),
+            builder: (context, snap) => InfoRow(
+              icon: Icons.verified_user_outlined,
+              label: 'Peran',
+              value: !snap.hasData
+                  ? 'Memeriksa…'
+                  : (snap.data!
+                      ? 'Operator (boleh START/STOP & ubah pengaturan)'
+                      : 'Pemantau (hanya melihat data)'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _signOut(context),
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Keluar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BackgroundMonitorCard extends StatefulWidget {
+  const _BackgroundMonitorCard();
+
+  @override
+  State<_BackgroundMonitorCard> createState() => _BackgroundMonitorCardState();
+}
+
+class _BackgroundMonitorCardState extends State<_BackgroundMonitorCard> {
+  bool? _running;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BackgroundMonitor.isRunning().then((v) {
+      if (mounted) setState(() => _running = v);
+    });
+  }
+
+  Future<void> _toggle(bool enabled) async {
+    final controller = context.read<MonitoringController>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    final running = await BackgroundMonitor.setEnabled(enabled);
+    controller.pushNotifications = !running;
+    if (!mounted) return;
+    setState(() {
+      _running = running;
+      _busy = false;
+    });
+    if (enabled && !running) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Pemantauan latar belakang gagal dijalankan. '
+            'Periksa izin notifikasi aplikasi.'),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final running = _running ?? false;
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        secondary: Icon(running
+            ? Icons.notifications_active_rounded
+            : Icons.notifications_off_outlined),
+        title: const Text('Pantau saat aplikasi ditutup'),
+        subtitle: const Text(
+          'Menampilkan notifikasi tetap di status bar dan menjaga koneksi ke '
+          'server, sehingga peringatan hampir penuh, penuh, dan gangguan tetap '
+          'datang. Memakai baterai lebih banyak.',
+        ),
+        value: running,
+        onChanged: (_running == null || _busy) ? null : _toggle,
+      ),
+    );
+  }
+}
+
+class _ThemeCard extends StatelessWidget {
+  const _ThemeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeMode = ThemeModeController.instance;
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: themeMode,
+        builder: (context, mode, _) {
+          final dark = themeMode.isDark(context);
+          return SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: Icon(dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded),
+            title: const Text('Mode gelap'),
+            subtitle: Text(mode == ThemeMode.system
+                ? 'Mengikuti pengaturan ponsel. Geser untuk memilih sendiri.'
+                : (dark ? 'Tema gelap aktif' : 'Tema terang aktif')),
+            value: dark,
+            onChanged: themeMode.setDark,
+          );
+        },
       ),
     );
   }

@@ -14,6 +14,8 @@
 // Firebase Console -> Realtime Database -> URL di bagian atas (tanpa "/" di akhir)
 #define FIREBASE_DATABASE_URL "https://nama-proyek-default-rtdb.asia-southeast1.firebasedatabase.app"
 
-// Akun khusus perangkat: Firebase Console -> Authentication -> Users -> Add user
+// Akun khusus perangkat: Firebase Console -> Authentication -> Users -> Add user.
+// Lalu salin "User UID" akun ini ke Realtime Database: /devices/<UID> = true.
+// Tanpa langkah itu rules menolak semua tulisan ESP32 (HTTP 401/403).
 #define FIREBASE_DEVICE_EMAIL "esp32@pilahpintar.id"
 #define FIREBASE_DEVICE_PASSWORD "ganti-password-perangkat"

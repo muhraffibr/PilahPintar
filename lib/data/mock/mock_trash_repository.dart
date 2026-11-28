@@ -34,9 +34,11 @@ class MockTrashRepository implements TrashRepository {
     final now = _clock();
     final settings = _loadSettings();
     _settings = _ValueSubject(settings);
+    // Kondisi awal sama dengan alat sungguhan: sistem OFF dan konveyor
+    // STOPPED sampai operator menekan START.
     _system = _ValueSubject(SystemStatus(
-      system: PowerState.on,
-      conveyor: ConveyorState.running,
+      system: PowerState.off,
+      conveyor: ConveyorState.stopped,
       connection: DeviceConnection.connected,
       lastUpdated: now,
     ));
@@ -85,6 +87,10 @@ class MockTrashRepository implements TrashRepository {
   Timer? _tickTimer;
   Timer? _heartbeatTimer;
   bool _deviceOnline = true;
+
+  /// Simulasi penolakan START oleh perangkat, mis. `LOCAL_RESET` setelah
+  /// tombol darurat (STM32 menunggu tombol RESET di mesin). `null` = normal.
+  String? startRejectReason;
   bool _disposed = false;
   int _idCounter = 0;
 
@@ -173,6 +179,18 @@ class MockTrashRepository implements TrashRepository {
       if (_disposed || !_deviceOnline) return;
       final current = _system.value;
       if (current == null) return;
+      final reject = startRejectReason;
+      if (command == SystemCommand.start && reject != null) {
+        // STM32 membalas $NAK,START,<alasan>; ESP32 menulis FAILED + reason.
+        _command.value = CommandRecord(
+          command: command,
+          issuedAt: record.issuedAt,
+          status: CommandStatus.failed,
+          source: record.source,
+          reason: reject,
+        );
+        return;
+      }
       final now = _clock();
       _system.value = switch (command) {
         SystemCommand.start => current.copyWith(

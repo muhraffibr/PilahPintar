@@ -45,6 +45,16 @@ float median3(float a, float b, float c) {
 }
 
 void measure(Bin &bin) {
+#if NETWORK_TEST_MODE
+  // Tanpa sensor: isi naik pelan (-0,1 s.d. +0,2% per ukur, rata-rata ±2% per
+  // 25 dtk per tempat sampah), dikosongkan saat penuh.
+  float pct = bin.percent + random(-1, 3) / 10.0f;
+  pct = pct >= 100.0f ? 0.0f : constrain(pct, 0.0f, 100.0f);
+  bin.percent = pct;
+  bin.lastCm = BIN_EMPTY_DISTANCE_CM - pct / 100.0f * (BIN_EMPTY_DISTANCE_CM - BIN_FULL_DISTANCE_CM);
+  bin.failures = 0;
+  bin.valid = true;
+#else
   float s[3];
   uint8_t ok = 0;
   for (uint8_t i = 0; i < 3; i++) {
@@ -73,6 +83,7 @@ void measure(Bin &bin) {
     bin.percent = bin.percent * 0.6f + pct * 0.4f;
   }
   bin.valid = true;
+#endif
 }
 
 }  // namespace
